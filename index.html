@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>talk &amp; cut</title>
+  <meta name="description" content="말로 찍고, 느낌대로 보정하는 네컷 사진 부스">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Black+Han+Sans&family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="top">
+    <h1 class="brand">talk&nbsp;&amp;&nbsp;cut</h1>
+    <p class="tagline">말하면 찍고, 느낌대로 보정하는 네컷</p>
+    <p class="counter" aria-live="polite"><span id="cutNow">1</span><span class="of">/4</span></p>
+  </header>
+
+  <main class="booth">
+    <section class="stage-col">
+      <div class="stage" id="stage">
+        <canvas id="preview" aria-label="카메라 미리보기"></canvas>
+        <canvas id="overlay" aria-hidden="true"></canvas>
+        <div class="pose-chip" id="poseChip" hidden>
+          <strong id="poseName"></strong>
+          <span id="poseTip"></span>
+          <em id="poseMatch" hidden></em>
+        </div>
+        <div class="countdown" id="countdown" aria-live="assertive"></div>
+        <div class="flash" id="flash"></div>
+        <div class="cam-msg" id="camMsg">
+          <p>카메라를 켜면 촬영을 시작할 수 있어요.</p>
+          <button class="btn primary" id="camBtn" type="button">카메라 켜기</button>
+        </div>
+        <video id="video" playsinline muted hidden></video>
+      </div>
+
+      <div class="voicebar" id="voicebar" data-state="off">
+        <button class="mic" id="micBtn" type="button" aria-pressed="false">
+          <span class="mic-dot" aria-hidden="true"></span>
+          <span id="micLabel">말로 조작하기</span>
+        </button>
+        <div class="dialog" aria-live="polite">
+          <p class="heard" id="heard">“3초 뒤에 찍어줘”처럼 말해 보세요</p>
+          <p class="reply" id="reply"></p>
+        </div>
+        <form class="typed" id="typedForm" autocomplete="off">
+          <label class="sr-only" for="typedInput">말 대신 입력</label>
+          <input id="typedInput" type="text" placeholder="말 대신 입력">
+          <button class="btn" type="submit">보내기</button>
+        </form>
+      </div>
+    </section>
+
+    <aside class="strip-col">
+      <div class="strip-holder"><canvas id="strip" aria-label="네컷 결과 미리보기"></canvas></div>
+      <div class="strip-actions">
+        <button class="btn primary" id="saveBtn" type="button">사진 저장</button>
+        <button class="btn" id="restartBtn" type="button">처음부터</button>
+      </div>
+    </aside>
+
+    <section class="panel">
+      <div class="tabs" role="tablist">
+        <button role="tab" id="tab-pose" aria-controls="pane-pose" aria-selected="true">포즈</button>
+        <button role="tab" id="tab-filter" aria-controls="pane-filter" aria-selected="false">보정</button>
+        <button role="tab" id="tab-frame" aria-controls="pane-frame" aria-selected="false">프레임</button>
+        <button role="tab" id="tab-help" aria-controls="pane-help" aria-selected="false">말하는 법</button>
+      </div>
+
+      <div class="pane" id="pane-pose" role="tabpanel" aria-labelledby="tab-pose">
+        <div class="row">
+          <span class="field-name">인원</span>
+          <div class="seg" id="headcount" role="radiogroup" aria-label="인원">
+            <button role="radio" data-n="1">1명</button>
+            <button role="radio" data-n="2">2명</button>
+            <button role="radio" data-n="3">3명</button>
+            <button role="radio" data-n="4">4명</button>
+          </div>
+          <span class="hint" id="detectState">포즈 인식 준비 중</span>
+        </div>
+        <ol class="plan" id="plan"></ol>
+        <div class="row">
+          <button class="btn" id="poseNextBtn" type="button">다른 포즈</button>
+          <label class="check"><input type="checkbox" id="autoShutter"> 포즈를 맞추면 자동으로 찍기</label>
+        </div>
+      </div>
+
+      <div class="pane" id="pane-filter" role="tabpanel" aria-labelledby="tab-filter" hidden>
+        <div class="moods" id="moods"></div>
+        <p class="explain" id="explain">느낌을 말하면 채도·밝기·색온도를 알아서 맞춰요. 슬라이더로 직접 다듬어도 돼요.</p>
+        <div class="sliders" id="sliders"></div>
+        <div class="row">
+          <button class="btn" id="resetFilterBtn" type="button">보정 초기화</button>
+          <label class="check"><input type="checkbox" id="compareToggle"> 원본과 비교</label>
+        </div>
+      </div>
+
+      <div class="pane" id="pane-frame" role="tabpanel" aria-labelledby="tab-frame" hidden>
+        <h2 class="pane-title">추천 프레임</h2>
+        <ul class="recs" id="recs"></ul>
+        <h2 class="pane-title">모든 프레임</h2>
+        <div class="themes" id="themes"></div>
+        <div class="row">
+          <span class="field-name">모양</span>
+          <div class="seg" id="layoutSeg" role="radiogroup" aria-label="프레임 모양">
+            <button role="radio" data-layout="strip">세로 네컷</button>
+            <button role="radio" data-layout="grid">2×2</button>
+          </div>
+        </div>
+        <div class="row">
+          <label class="field-name" for="captionInput">문구</label>
+          <input id="captionInput" type="text" maxlength="24" placeholder="예: 우리 졸업 축하해">
+        </div>
+      </div>
+
+      <div class="pane" id="pane-help" role="tabpanel" aria-labelledby="tab-help" hidden>
+        <dl class="phrases">
+          <dt>찍기</dt><dd>“찍어줘” “5초 뒤에 찍어” “바로 찍어” “포즈 맞추면 찍어줘”</dd>
+          <dt>다시 찍기</dt><dd>“두 번째 컷 다시 찍어” “다시 찍을래”</dd>
+          <dt>보정</dt><dd>“몽환적인 느낌으로” “90년대 필름처럼” “조금 더 따뜻하게” “아까보다 덜 어둡게” “원본으로”</dd>
+          <dt>포즈</dt><dd>“우리 세 명이야” “포즈 추천해줘” “다른 포즈”</dd>
+          <dt>프레임</dt><dd>“프레임 추천해줘” “다른 프레임” “2×2로 바꿔” “문구는 우리 졸업 축하해로 해줘”</dd>
+          <dt>마무리</dt><dd>“저장해줘” “처음부터 다시 시작”</dd>
+        </dl>
+        <details class="debug">
+          <summary>마지막 명령 해석 결과(JSON)</summary>
+          <pre id="lastJson">아직 없음</pre>
+        </details>
+        <label class="check"><input type="checkbox" id="ttsToggle" checked> 음성 안내 켜기</label>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
