@@ -1,7 +1,7 @@
 import { FilterRenderer } from './glfilter.js';
 import { NEUTRAL, PARAM_META, MOODS, applyMood, explain, nearestMood } from './emotion.js';
 import { parseUtterance } from './intent.js';
-import { POSES, recommendPlan, drawGuide, PoseDetector, matchPose } from './pose.js';
+import { POSES, recommendPlan, drawGuide, drawDebug, PoseDetector, matchPose } from './pose.js';
 import { LAYOUTS, THEMES, themeById, cellAspect, recommendFrames, composite, averageColor } from './frames.js';
 import { Voice } from './voice.js';
 
@@ -46,6 +46,8 @@ const state = {
 const live = new FilterRenderer(els.preview);
 const offscreen = new FilterRenderer(document.createElement('canvas'));
 const detector = new PoseDetector();
+// ?debug=1 이면 랜드마크·판정 수치를 뷰파인더에 겹쳐 그린다 (실제 카메라에서 TH 튜닝용)
+const DEBUG = new URLSearchParams(location.search).has('debug');
 
 // ---------- 공통 ----------
 
@@ -156,6 +158,7 @@ function frame(now) {
   if (pose) {
     const m = detector.ready ? matchPose(pose, state.people, state.headcount) : null;
     drawGuide(ctx, pose, state.headcount, w, h, m?.ok);
+    if (DEBUG && m) drawDebug(ctx, state.people, m, v.videoWidth, v.videoHeight, w, h);
   }
 }
 
