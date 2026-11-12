@@ -203,20 +203,23 @@ export function composite(out, { layout, themeId, shots, params, caption, render
     ctx.restore();
   });
 
-  // 하단 문구 영역
+  // 인화지 하단에 부스 이름과 촬영 날짜를 남긴다.
   const baseY = L.h - L.bottom;
   ctx.fillStyle = theme.ink;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   const cx = L.w / 2;
   if (caption) {
-    ctx.font = `${layout === 'grid' ? 64 : 46}px "Black Han Sans", sans-serif`;
-    fitText(ctx, caption, cx, baseY + L.bottom * 0.38, L.w - L.margin * 2);
+    ctx.font = `${layout === 'grid' ? 56 : 42}px "Black Han Sans", sans-serif`;
+    fitText(ctx, caption, cx, baseY + L.bottom * 0.23, L.w - L.margin * 2);
   }
+  const brandY = baseY + L.bottom * (caption ? 0.52 : 0.43);
+  ctx.font = `700 ${layout === 'grid' ? 64 : 51}px "Space Grotesk", sans-serif`;
+  ctx.fillText('Talk & Cut', cx, brandY);
   ctx.globalAlpha = 0.8;
-  ctx.font = `500 ${layout === 'grid' ? 30 : 24}px "IBM Plex Sans KR", sans-serif`;
+  ctx.font = `600 ${layout === 'grid' ? 28 : 23}px "Space Grotesk", sans-serif`;
   const d = `${date.getFullYear()}.${String(date.getMonth() + 1).padStart(2, '0')}.${String(date.getDate()).padStart(2, '0')}`;
-  ctx.fillText(`talk & cut  ${d}`, cx, baseY + L.bottom * (caption ? 0.72 : 0.5));
+  ctx.fillText(d, cx, brandY + L.bottom * 0.24);
   ctx.globalAlpha = 1;
 }
 

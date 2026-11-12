@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 580 550">
+  <defs>
+    <filter id="shadow" x="-60%" y="-20%" width="240%" height="150%"><feDropShadow dx="5" dy="14" stdDeviation="12" flood-color="#211342" flood-opacity=".32"/></filter>
+    <linearGradient id="lilac" x2="1" y2="1" gradientUnits="objectBoundingBox"><stop stop-color="#c7b7f0"/><stop offset="1" stop-color="#9f8cce"/></linearGradient>
+    <linearGradient id="pink" x2="1" y2="1" gradientUnits="objectBoundingBox"><stop stop-color="#eebac3"/><stop offset="1" stop-color="#c58eaa"/></linearGradient>
+    <linearGradient id="blue" x2="1" y2="1" gradientUnits="objectBoundingBox"><stop stop-color="#c7cbed"/><stop offset="1" stop-color="#989ecb"/></linearGradient>
+    <clipPath id="photo"><rect width="125" height="88" rx="2"/></clipPath>
+    <g id="person">
+      <path d="M-41 93q4-28 26-31l8-3h14l9 3q24 4 26 31Z" fill="currentColor"/>
+      <path d="M-14 60q-2 12 14 13 15 0 14-13l-7-5H-7Z" fill="#dc987e"/>
+      <path d="M-26 37q-7-24 12-30Q3-6 21 7q13 10 8 30l-4 19q-13 12-43 3Z" fill="#262032"/>
+      <path d="M-21 32q-9-3-7 7 1 7 8 5 3 16 19 17 14 0 20-17 8 0 8-8 1-6-7-4l-3-13q-14 10-37 8Z" fill="#edb398"/>
+      <path d="M-11 34h.1m19 0h.1" stroke="#292132" stroke-width="3.6" stroke-linecap="round"/>
+      <path d="M-6 45q6 6 12-1" fill="none" stroke="#834555" stroke-width="2" stroke-linecap="round"/>
+      <path d="M-14 42h-3m30 0h3" stroke="#c67d82" stroke-width="2.7" stroke-linecap="round"/>
+    </g>
+    <g id="duo"><use href="#person" transform="translate(34 6) rotate(-7) scale(.97)" color="#f6e5d9"/><use href="#person" transform="translate(88 6) rotate(8) scale(.96)" color="#554786"/></g>
+    <g id="duo2"><use href="#person" transform="translate(36 12) rotate(9) scale(.96)" color="#6a5397"/><use href="#person" transform="translate(87 1) rotate(-10) scale(1.05)" color="#eddfef"/></g>
+    <g id="spark"><path d="M0-14Q2-2 14 0 2 2 0 14-2 2-14 0-2-2 0-14Z" fill="currentColor"/></g>
+    <g id="sticker"><path d="M0 8C-17-3-5-13 0-5 5-13 17-3 0 8Z" fill="currentColor"/></g>
+    <g id="caption" font-family="sans-serif" font-weight="700" text-anchor="middle">
+      <text x="73" y="400" font-size="13" letter-spacing="1.6">TALK &amp; CUT</text>
+      <text x="73" y="412" font-size="5.4" letter-spacing="2">PHOTO CLUB</text>
+    </g>
+    <g id="perfs" opacity=".4" fill="#fff"><circle cx="0" cy="0" r="1.4"/><circle cx="6" cy="0" r="1.4"/><circle cx="12" cy="0" r="1.4"/><circle cx="18" cy="0" r="1.4"/><circle cx="24" cy="0" r="1.4"/></g>
+  </defs>
+  <g fill="none" stroke="#6f54b1" stroke-width="1" opacity=".38">
+    <circle cx="290" cy="266" r="193"/>
+    <circle cx="290" cy="266" r="214" stroke-dasharray="3 7"/>
+    <path d="M37 266h506M290 34v466" stroke-dasharray="2 6" opacity=".7"/>
+    <circle cx="290" cy="52" r="3.4" fill="#f0e6ff"/><circle cx="76" cy="266" r="3.4" fill="#f0e6ff"/><circle cx="504" cy="266" r="3.4" fill="#f0e6ff"/>
+  </g>
+  <g transform="translate(208 63) rotate(12 73 210)" filter="url(#shadow)">
+    <rect width="146" height="425" rx="4" fill="#4f3686"/>
+    <g transform="translate(10.5 12)" clip-path="url(#photo)"><path fill="url(#lilac)" d="M0 0h125v88H0z"/><use href="#duo2"/><use href="#spark" color="#fff0ce" transform="translate(105 18) scale(.55)"/></g>
+    <g transform="translate(10.5 105)" clip-path="url(#photo)"><path fill="url(#blue)" d="M0 0h125v88H0z"/><use href="#duo" transform="translate(2 -1)"/><use href="#sticker" color="#fad6ea" transform="translate(63 17) scale(.8)"/></g>
+    <g transform="translate(10.5 198)" clip-path="url(#photo)"><path fill="url(#pink)" d="M0 0h125v88H0z"/><use href="#duo2" transform="translate(-5 0)"/><use href="#spark" color="#fff0ce" transform="translate(110 22) scale(.5)"/></g>
+    <g transform="translate(10.5 291)" clip-path="url(#photo)"><path fill="url(#lilac)" d="M0 0h125v88H0z"/><use href="#duo" transform="translate(4 5)"/><use href="#sticker" color="#faf0ff" transform="translate(64 18)"/></g>
+    <use href="#caption" fill="#fff6fc"/>
+  </g>
+  <g transform="translate(298 91) rotate(-11 73 210)" filter="url(#shadow)">
+    <rect width="146" height="425" rx="4" fill="#fff9ed"/>
+    <g transform="translate(10.5 12)" clip-path="url(#photo)"><path fill="url(#pink)" d="M0 0h125v88H0z"/><use href="#person" color="#73496e" transform="translate(62 3)"/><use href="#spark" color="#fff4dd" transform="translate(97 24) scale(.8)"/></g>
+    <g transform="translate(10.5 105)" clip-path="url(#photo)"><path fill="url(#lilac)" d="M0 0h125v88H0z"/><use href="#person" color="#503b79" transform="translate(59 6) rotate(-13)"/><use href="#sticker" color="#fce1eb" transform="translate(94 26) scale(1.1)"/></g>
+    <g transform="translate(10.5 198)" clip-path="url(#photo)"><path fill="url(#blue)" d="M0 0h125v88H0z"/><use href="#person" color="#645688" transform="translate(69 4) rotate(15)"/><use href="#spark" color="#fff0cc" transform="translate(35 24) scale(.65)"/></g>
+    <g transform="translate(10.5 291)" clip-path="url(#photo)"><path fill="url(#pink)" d="M0 0h125v88H0z"/><use href="#person" color="#694477" transform="translate(62 3) rotate(4)"/><use href="#sticker" color="#fff4e9" transform="translate(34 23) scale(.72)"/><use href="#sticker" color="#fff4e9" transform="translate(98 19) scale(.8)"/></g>
+    <use href="#caption" fill="#443450"/>
+  </g>
+  <g color="#fcf4e7"><use href="#spark" transform="translate(119 164) scale(1.66)"/><use href="#spark" transform="translate(157 131) scale(.7)"/><use href="#spark" transform="translate(476 365) scale(1.3)"/><use href="#spark" transform="translate(506 393) scale(.63)"/></g>
+  <g color="#6a4ca9"><use href="#spark" transform="translate(467 142) scale(.9)"/><use href="#spark" transform="translate(123 414) scale(.8)"/><use href="#spark" transform="translate(96 440) scale(.45)"/></g>
+  <g transform="translate(100 318) rotate(-12)"><rect width="112" height="39" rx="19.5" fill="#e9fcad" stroke="#45306a" stroke-width="1.2"/><text x="56" y="24" fill="#342447" text-anchor="middle" font-family="sans-serif" font-weight="800" font-size="11.5" letter-spacing="1.3">SAY CHEESE!</text></g>
+  <use href="#perfs" x="452" y="468"/><use href="#perfs" x="105" y="94"/>
+</svg>

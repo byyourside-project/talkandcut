@@ -69,7 +69,7 @@ test('포즈·인원·프레임·문구·저장', () => {
   assert.deepEqual(acts('다른 포즈'), ['POSE_NEXT']);
   assert.deepEqual(acts('프레임 추천해줘'), ['FRAME_RECOMMEND']);
   assert.deepEqual(acts('다른 프레임으로 바꿔'), ['FRAME_NEXT']);
-  assert.deepEqual(parseUtterance('2x2로 바꿔'), [{ action: 'LAYOUT', layout: 'grid' }]);
+  assert.deepEqual(parseUtterance('2×2로 바꿔'), [{ action: 'LAYOUT', layout: 'grid' }]);
   assert.deepEqual(parseUtterance('문구는 우리 졸업 축하해로 해줘'), [{ action: 'CAPTION', text: '우리 졸업 축하해' }]);
   assert.deepEqual(acts('저장해줘'), ['SAVE']);
   assert.deepEqual(acts('처음부터 다시 시작'), ['START']);
@@ -77,4 +77,10 @@ test('포즈·인원·프레임·문구·저장', () => {
 
 test('모르는 말은 빈 배열', () => {
   assert.deepEqual(parseUtterance('오늘 점심 뭐 먹지'), []);
+});
+
+test('홈으로 나가기와 촬영 취소는 각각 단독 명령이다', () => {
+  assert.deepEqual(acts('시작 화면으로 돌아가'), ['HOME']);
+  assert.deepEqual(acts('촬영 취소'), ['CANCEL']);
+  assert.deepEqual(acts('문구는 홈으로로 해줘'), ['CAPTION']);
 });

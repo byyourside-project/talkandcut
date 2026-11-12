@@ -4,80 +4,115 @@
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 
 export class Voice {
-  constructor({ onFinal, onInterim, onState }) {
+  constructor({ onFinal, onState }) {
     this.onFinal = onFinal;
-    this.onInterim = onInterim;
     this.onState = onState;
     this.supported = !!SR;
     this.active = false;
-    this.speaking = false;
+    this.running = false;
+    this.utterance = null;
     this.ttsEnabled = true;
     if (!this.supported) return;
 
     const rec = new SR();
     rec.lang = 'ko-KR';
     rec.continuous = true;
-    rec.interimResults = true;
+    rec.interimResults = false;
     rec.maxAlternatives = 1;
+    rec.onstart = () => {
+      if (this.active && !this.utterance) this.onState('listening');
+    };
     rec.onresult = (e) => {
-      let interim = '';
       for (let i = e.resultIndex; i < e.results.length; i++) {
+        if (!this.active || this.utterance) return;
         const r = e.results[i];
         if (r.isFinal) this.onFinal(r[0].transcript.trim());
-        else interim += r[0].transcript;
       }
-      if (interim) this.onInterim(interim.trim());
     };
-    rec.onerror = (e) => {
-      if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
-        this.active = false;
-        this.onState('denied');
-      } else if (e.error !== 'no-speech' && e.error !== 'aborted') {
-        this.onState('error', e.error);
-      }
+    rec.onerror = ({ error }) => {
+      if (!this.active || error === 'no-speech' || error === 'aborted') return;
+      // 네트워크나 장치 오류는 자동으로 반복하지 않고 메뉴에서 재시도한다.
+      this.active = false;
+      this.onState(error === 'not-allowed' || error === 'service-not-allowed' ? 'denied' : 'error');
     };
     rec.onend = () => {
-      // continuous 모드여도 브라우저가 주기적으로 끊기 때문에 자동 재시작
-      if (this.active && !this.speaking) {
-        try { rec.start(); } catch { /* 이미 시작됨 */ }
-      } else if (!this.active) {
-        this.onState('off');
-      }
+      this.running = false;
+      this.listen();
     };
     this.rec = rec;
   }
 
   start() {
-    if (!this.supported) return;
+    if (!this.supported) {
+      this.onState('unsupported');
+      return;
+    }
+    if (this.active) return;
     this.active = true;
-    try { this.rec.start(); } catch { /* 이미 시작됨 */ }
-    this.onState('listening');
+    this.onState(this.utterance ? 'speaking' : 'connecting');
+    this.listen();
+  }
+
+  listen() {
+    if (!this.active || this.running || this.utterance) return;
+    try {
+      this.running = true;
+      this.rec.start();
+    } catch {
+      this.running = false;
+      this.active = false;
+      this.onState('error');
+    }
   }
 
   stop() {
-    if (!this.supported) return;
     this.active = false;
-    this.rec.stop();
-    this.onState('off');
+    this.cancelSpeech();
+    this.abortListening();
+    this.onState(this.supported ? 'off' : 'unsupported');
   }
 
-  /** 짧은 음성 안내. 말하는 동안은 인식을 멈춰 자기 목소리를 명령으로 듣지 않게 한다. */
+  abortListening() {
+    if (this.running) {
+      try { this.rec.abort(); } catch { this.running = false; }
+    }
+  }
+
+  cancelSpeech() {
+    if (!this.utterance) return;
+    this.utterance = null;
+    window.speechSynthesis.cancel();
+  }
+
+  setTtsEnabled(enabled) {
+    this.ttsEnabled = enabled;
+    if (!enabled && this.utterance) {
+      this.cancelSpeech();
+      if (this.active) this.onState('connecting');
+      this.listen();
+    }
+  }
+
+  /** 안내 중에는 인식을 멈춰 부스의 음성을 명령으로 듣지 않게 한다. */
   say(text) {
-    if (!this.ttsEnabled || !('speechSynthesis' in window) || !text) return;
+    if (!this.ttsEnabled || !window.speechSynthesis || !text) return;
+    this.cancelSpeech();
     const u = new SpeechSynthesisUtterance(text);
     u.lang = 'ko-KR';
     u.rate = 1.1;
+    this.utterance = u;
     const resume = () => {
-      this.speaking = false;
-      if (this.active) { try { this.rec.start(); } catch { /* noop */ } }
+      if (this.utterance !== u) return;
+      this.utterance = null;
+      if (this.active) this.onState('connecting');
+      this.listen();
     };
     u.onend = resume;
     u.onerror = resume;
-    if (this.active && this.rec) {
-      this.speaking = true;
-      try { this.rec.abort(); } catch { /* noop */ }
+    if (this.active) {
+      this.onState('speaking');
+      this.abortListening();
     }
-    speechSynthesis.cancel();
-    speechSynthesis.speak(u);
+    try { window.speechSynthesis.speak(u); } catch { resume(); }
   }
 }

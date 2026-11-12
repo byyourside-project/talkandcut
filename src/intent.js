@@ -3,7 +3,7 @@
 // 스키마(온디바이스 LLM으로 교체 시 동일하게 출력하도록 학습):
 //   { action: 'CAPTURE', delay: number, when?: 'POSE_MATCH' }
 //   { action: 'RETAKE', index: 0..3 | null, delay }
-//   { action: 'START' }
+//   { action: 'START' } | { action: 'HOME' }
 //   { action: 'FILTER', mode, moodIds, deltas, label }
 //   { action: 'RESET_FILTER' }
 //   { action: 'POSE_NEXT' } | { action: 'POSE_PLAN' }
@@ -58,6 +58,7 @@ export function parseUtterance(raw, ctx = {}) {
   if (cap) return [{ action: 'CAPTION', text: cap[3].trim() }];
   if (/(문구|글씨|캡션)\s?(지워|빼|없애)/.test(t)) return [{ action: 'CAPTION', text: '' }];
 
+  if (/(?:^홈$|홈으로|첫\s?화면으로|시작\s?화면으로)/.test(t)) return [{ action: 'HOME' }];
   if (/취소|그만|멈춰|스톱|중지/.test(t)) return [{ action: 'CANCEL' }];
 
   if (/(처음부터|새로)\s?(다시|시작|찍)|다시\s?시작|^시작|시작하자|시작해/.test(t)) {
@@ -92,7 +93,7 @@ export function parseUtterance(raw, ctx = {}) {
     else actions.push({ action: 'FRAME_RECOMMEND' });
   }
   if (/세로\s?(로|형|네컷|한\s?줄)|한\s?줄|스트립/.test(t)) actions.push({ action: 'LAYOUT', layout: 'strip' });
-  else if (/(2|두)\s?(x|바이|곱하기)\s?(2|두)|격자|정사각|네모\s?칸|큰\s?사진/.test(t)) actions.push({ action: 'LAYOUT', layout: 'grid' });
+  else if (/(2|두)\s?([xX×]|바이|곱하기)\s?(2|두)|격자|정사각|네모\s?칸|큰\s?사진/.test(t)) actions.push({ action: 'LAYOUT', layout: 'grid' });
 
   if (/저장|다운로드|다운|뽑아|인화|출력/.test(t)) actions.push({ action: 'SAVE' });
 
