@@ -117,6 +117,7 @@ function showTab(name) {
 
 let cameraRequest = null;
 let detectorRequest = null;
+let startingFullscreen = false;
 
 function showCameraMessage(message) {
   state.cameraStatus = message;
@@ -234,6 +235,7 @@ function setPhase(phase) {
   els.compareToggle.checked = false;
   if (editing) scheduleStrip();
   if (phase !== 'shoot') {
+    startingFullscreen = false;
     voice.stop();
     stopCamera();
     showCameraMessage('');
@@ -270,14 +272,23 @@ function startSession() {
   resetSession();
   setPhase('shoot');
   els.menuBtn.focus({ preventScroll: true });
-  // 같은 클릭에서 카메라·마이크와 전체 화면을 요청한다.
+  // 카메라와 마이크 권한 대화상자가 전체 화면 뒤에 가려지지 않도록 한다.
   try {
     audioCtx ??= new AudioContext();
     audioCtx.resume().catch(() => {});
   } catch { /* 소리 없이 진행 */ }
-  startCamera();
+  startingFullscreen = true;
+  startCamera().then((ready) => {
+    if (ready) finishStartingFullscreen();
+  });
   voice.start();
-  enterFullscreen();
+}
+
+function finishStartingFullscreen() {
+  const status = els.voicebar.dataset.state;
+  if (!startingFullscreen || !state.cameraOn || status === 'connecting') return;
+  startingFullscreen = false;
+  if (status === 'listening' || status === 'unsupported') enterFullscreen();
 }
 
 function goHome() {
@@ -901,35 +912,57 @@ const voiceLabels = {
   speaking: '음성 안내 중',
   denied: '마이크 권한 필요',
   unsupported: '음성 인식 미지원',
-  error: '마이크 연결 실패',
+  error: '음성 인식 연결 실패',
 };
 const voiceMessages = {
   off: '메뉴에서 마이크를 다시 연결할 수 있어요.',
   denied: '마이크 권한을 허용한 뒤 메뉴에서 다시 연결해 주세요.',
   unsupported: '이 브라우저에서는 음성 인식을 지원하지 않아요.',
-  error: '마이크나 네트워크 연결을 확인하고 메뉴에서 다시 연결해 주세요.',
+  error: '브라우저의 음성 인식 설정을 확인하고 메뉴에서 다시 연결해 주세요.',
 };
 
+const voiceErrors = {
+  timeout: '브라우저가 음성 인식 시작에 응답하지 않았어요. 마이크 권한을 확인해 주세요.',
+  'start-ended': '브라우저가 음성 인식을 시작하지 못했어요. 메뉴에서 다시 연결해 주세요.',
+  'audio-capture': '마이크 입력을 열 수 없어요. 시스템의 입력 장치와 음소거 상태를 확인해 주세요.',
+  network: '음성 인식 서비스에 연결할 수 없어요. 인터넷 연결을 확인해 주세요.',
+  'service-not-allowed': '브라우저에서 음성 인식 서비스를 사용할 수 없어요.',
+  'language-not-supported': '이 브라우저에서 한국어 음성 인식을 사용할 수 없어요.',
+};
+
+const safari = navigator.vendor === 'Apple Computer, Inc.';
+const safariVoiceHint = 'Safari에서는 시스템 설정에서 Siri가 켜져 있는지 확인해 주세요.';
+
 function updateVoicePrompt() {
-  els.voicePrompt.textContent = state.voiceStatus
-    ? '오른쪽 메뉴에서 터치로 조작할 수 있어요'
-    : '“찍어줘”라고 말해 보세요';
+  const status = els.voicebar.dataset.state;
+  if (status === 'connecting') {
+    els.voicePrompt.textContent = '권한 요청이 뜨면 마이크를 허용해 주세요';
+  } else if (status === 'speaking') {
+    els.voicePrompt.textContent = '안내가 끝나면 다시 들을게요';
+  } else {
+    els.voicePrompt.textContent = state.voiceStatus
+      ? '오른쪽 메뉴에서 터치로 조작할 수 있어요'
+      : '“찍어줘”라고 말해 보세요';
+  }
 }
 
 const voice = new Voice({
   onFinal: (t) => t && handleUtterance(t),
-  onState: (s) => {
+  onState: (s, reason) => {
     const wasError = !!state.voiceStatus;
     els.voicebar.dataset.state = s;
     els.voiceState.textContent = voiceLabels[s];
-    state.voiceStatus = voiceMessages[s] ?? '';
+    state.voiceStatus = voiceErrors[reason] ?? voiceMessages[s] ?? '';
+    if (safari && ['timeout', 'start-ended', 'start-failed', 'service-not-allowed', 'not-allowed'].includes(reason)) {
+      state.voiceStatus += ' ' + safariVoiceHint;
+    }
     updateVoicePrompt();
     updateControls();
     if (state.voiceStatus) els.reply.textContent = state.voiceStatus;
     else if (wasError) els.reply.textContent = '';
-    els.micBtn.textContent = s === 'listening' || s === 'speaking' || s === 'connecting'
-      ? '마이크 끄기' : '마이크 다시 연결';
+    els.micBtn.textContent = s === 'listening' || s === 'speaking' ? '마이크 끄기' : '마이크 다시 연결';
     els.micBtn.disabled = s === 'unsupported';
+    if (s !== 'connecting') finishStartingFullscreen();
   },
 });
 
@@ -950,7 +983,21 @@ els.controls.addEventListener('click', (e) => {
 });
 els.closeMenuBtn.addEventListener('click', closeMenu);
 els.camBtn.addEventListener('click', () => { closeMenu(); startCamera(); });
-els.micBtn.addEventListener('click', () => { closeMenu(); if (voice.active) voice.stop(); else voice.start(); });
+els.micBtn.addEventListener('click', () => {
+  const status = els.voicebar.dataset.state;
+  closeMenu();
+  startingFullscreen = false;
+  voice.stop();
+  if (status === 'listening' || status === 'speaking') return;
+  // 권한 창을 보면서 다시 연결할 수 있게 한다.
+  if (document.fullscreenElement !== els.session) {
+    voice.start();
+    return;
+  }
+  document.exitFullscreen().catch(() => {}).then(() => {
+    if (state.phase === 'shoot' && !state.touchRetake && nextIndex() >= 0) voice.start();
+  });
+});
 els.fullscreenBtn.addEventListener('click', () => { closeMenu(); enterFullscreen(); });
 document.addEventListener('fullscreenchange', updateControls);
 els.typedForm.addEventListener('submit', (e) => {

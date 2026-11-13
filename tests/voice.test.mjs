@@ -29,19 +29,22 @@ test('연결 오류가 나면 자동 재시작하지 않고 메뉴에서 다시 
   voice.rec.onstart();
   assert.equal(statuses.at(-1), 'listening');
 
-  voice.rec.onerror({ error: 'not-allowed' });
-  voice.rec.onend();
+  const denied = voice.rec;
+  denied.onerror({ error: 'not-allowed' });
+  denied.onend();
   assert.equal(statuses.at(-1), 'denied');
-  assert.equal(voice.rec.starts, 1);
+  assert.equal(denied.starts, 1);
 
   voice.start();
   voice.rec.onstart();
   assert.equal(statuses.at(-1), 'listening');
-  assert.equal(voice.rec.starts, 2);
-  voice.rec.onerror({ error: 'network' });
-  voice.rec.onend();
+  const retry = voice.rec;
+  assert.notEqual(retry, denied);
+  assert.equal(retry.starts, 1);
+  retry.onerror({ error: 'network' });
+  retry.onend();
   assert.equal(statuses.at(-1), 'error');
-  assert.equal(voice.rec.starts, 2);
+  assert.equal(retry.starts, 1);
 });
 
 test('음성 안내가 먼저 끝나도 마이크가 종료된 뒤에만 다시 듣는다', () => {
@@ -62,7 +65,46 @@ test('음성 안내가 먼저 끝나도 마이크가 종료된 뒤에만 다시 
   assert.deepEqual(heard, ['바로 찍어']);
   assert.equal(voice.rec.starts, 2);
 
+  const stopped = voice.rec;
   voice.stop();
-  voice.rec.onend();
-  assert.equal(voice.rec.starts, 2);
+  stopped.onend();
+  assert.equal(stopped.starts, 2);
+});
+
+test('시작 이벤트가 없으면 연결을 중단하고 늦게 도착한 응답을 무시한다', (t) => {
+  let scheduled;
+  t.mock.method(globalThis, 'setTimeout', (callback) => {
+    scheduled = callback;
+    return 1;
+  });
+  t.mock.method(globalThis, 'clearTimeout', () => { scheduled = null; });
+  const statuses = [];
+  const voice = new Voice({ onState: (...args) => statuses.push(args), onFinal: () => assert.fail('late command') });
+  voice.start();
+  const stalled = voice.rec;
+  scheduled();
+  assert.deepEqual(statuses.at(-1), ['error', 'timeout']);
+  assert.equal(stalled.aborts, 1);
+
+  voice.start();
+  const fresh = voice.rec;
+  assert.notEqual(fresh, stalled);
+  stalled.onstart();
+  stalled.onend();
+  stalled.hear('찍어줘');
+  assert.deepEqual(statuses.at(-1), ['connecting']);
+  fresh.onstart();
+  assert.equal(scheduled, null);
+  assert.deepEqual(statuses.at(-1), ['listening']);
+  voice.stop();
+});
+
+test('시작 전에 연결이 닫히면 자동 재시작하지 않는다', () => {
+  const statuses = [];
+  const voice = new Voice({ onState: (...args) => statuses.push(args), onFinal: () => {} });
+  voice.start();
+  const stalled = voice.rec;
+  stalled.onend();
+  assert.deepEqual(statuses.at(-1), ['error', 'start-ended']);
+  assert.equal(stalled.starts, 1);
 });

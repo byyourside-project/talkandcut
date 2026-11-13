@@ -2,6 +2,7 @@
 // 보드 버전에서는 이 모듈만 Silero VAD + SenseVoice 파이프라인으로 교체한다.
 
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+const START_TIMEOUT_MS = 10000;
 
 export class Voice {
   constructor({ onFinal, onState }) {
@@ -10,36 +11,48 @@ export class Voice {
     this.supported = !!SR;
     this.active = false;
     this.running = false;
+    this.pausing = false;
+    this.rec = null;
+    this.startTimer = null;
     this.utterance = null;
     this.ttsEnabled = true;
-    if (!this.supported) return;
+  }
 
+  createRecognition() {
     const rec = new SR();
     rec.lang = 'ko-KR';
     rec.continuous = true;
     rec.interimResults = false;
     rec.maxAlternatives = 1;
     rec.onstart = () => {
-      if (this.active && !this.utterance) this.onState('listening');
+      if (this.rec !== rec || !this.active || this.utterance || this.pausing) return;
+      this.clearStartTimer();
+      this.onState('listening');
     };
     rec.onresult = (e) => {
       for (let i = e.resultIndex; i < e.results.length; i++) {
-        if (!this.active || this.utterance) return;
+        if (this.rec !== rec || !this.active || this.utterance || this.pausing) return;
         const r = e.results[i];
         if (r.isFinal) this.onFinal(r[0].transcript.trim());
       }
     };
     rec.onerror = ({ error }) => {
-      if (!this.active || error === 'no-speech' || error === 'aborted') return;
-      // 네트워크나 장치 오류는 자동으로 반복하지 않고 메뉴에서 재시도한다.
-      this.active = false;
-      this.onState(error === 'not-allowed' || error === 'service-not-allowed' ? 'denied' : 'error');
+      if (this.rec !== rec || !this.active || error === 'no-speech' || error === 'aborted') return;
+      this.fail(error);
     };
     rec.onend = () => {
+      if (this.rec !== rec) return;
+      const endedBeforeStart = this.startTimer !== null && !this.pausing;
       this.running = false;
+      this.pausing = false;
+      this.clearStartTimer();
+      if (endedBeforeStart) {
+        this.fail('start-ended');
+        return;
+      }
       this.listen();
     };
-    this.rec = rec;
+    return rec;
   }
 
   start() {
@@ -49,33 +62,66 @@ export class Voice {
     }
     if (this.active) return;
     this.active = true;
-    this.onState(this.utterance ? 'speaking' : 'connecting');
+    if (this.utterance) this.onState('speaking');
     this.listen();
   }
 
   listen() {
     if (!this.active || this.running || this.utterance) return;
     try {
+      this.rec ??= this.createRecognition();
       this.running = true;
+      this.startTimer = setTimeout(() => this.fail('timeout'), START_TIMEOUT_MS);
+      this.onState('connecting');
       this.rec.start();
-    } catch {
-      this.running = false;
-      this.active = false;
-      this.onState('error');
+    } catch (error) {
+      this.fail(error?.name === 'NotAllowedError' ? 'not-allowed' : 'start-failed');
     }
+  }
+
+  clearStartTimer() {
+    clearTimeout(this.startTimer);
+    this.startTimer = null;
+  }
+
+  fail(reason) {
+    this.active = false;
+    this.releaseRecognition();
+    this.onState(reason === 'not-allowed' ? 'denied' : 'error', reason);
   }
 
   stop() {
     this.active = false;
     this.cancelSpeech();
-    this.abortListening();
+    this.releaseRecognition();
     this.onState(this.supported ? 'off' : 'unsupported');
   }
 
-  abortListening() {
-    if (this.running) {
-      try { this.rec.abort(); } catch { this.running = false; }
+  releaseRecognition() {
+    const rec = this.rec;
+    const running = this.running;
+    this.clearStartTimer();
+    this.rec = null;
+    this.running = false;
+    this.pausing = false;
+    if (running) {
+      try { rec.abort(); } catch { /* 종료된 인식 세션 */ }
     }
+  }
+
+  pauseListening() {
+    this.clearStartTimer();
+    if (!this.running || this.pausing) return;
+    this.pausing = true;
+    try { this.rec.abort(); } catch { this.releaseRecognition(); }
+  }
+
+  resumeListening() {
+    if (this.active && this.pausing) {
+      this.startTimer = setTimeout(() => this.fail('timeout'), START_TIMEOUT_MS);
+      this.onState('connecting');
+    }
+    this.listen();
   }
 
   cancelSpeech() {
@@ -88,8 +134,7 @@ export class Voice {
     this.ttsEnabled = enabled;
     if (!enabled && this.utterance) {
       this.cancelSpeech();
-      if (this.active) this.onState('connecting');
-      this.listen();
+      this.resumeListening();
     }
   }
 
@@ -104,14 +149,13 @@ export class Voice {
     const resume = () => {
       if (this.utterance !== u) return;
       this.utterance = null;
-      if (this.active) this.onState('connecting');
-      this.listen();
+      this.resumeListening();
     };
     u.onend = resume;
     u.onerror = resume;
     if (this.active) {
       this.onState('speaking');
-      this.abortListening();
+      this.pauseListening();
     }
     try { window.speechSynthesis.speak(u); } catch { resume(); }
   }
