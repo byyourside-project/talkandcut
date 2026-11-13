@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { POSES, CHECKS, side, matchPose, armsFor, peopleInFrame, peopleInSlots } from '../src/pose.js';
+import { readFileSync } from 'node:fs';
+import { cellAspect } from '../src/frames.js';
+import { POSES_BY_COUNT, CHECKS, side, matchPose, armsFor, peopleInFrame, peopleInSlots, recommendPlan, guidePlacement } from '../src/pose.js';
 
 // 각 포즈의 손과 팔 좌표로 테스트용 랜드마크를 만든다.
 const ARMS = {
@@ -68,7 +70,7 @@ test('손목이 화면 밖이면 차렷으로 보고, 손 올린 포즈는 통�
 });
 
 test('어깨동무는 두 사람이 붙어 있어야 통과', () => {
-  const pose = POSES.find((p) => p.id === 'shoulder');
+  const pose = POSES_BY_COUNT[2].find((p) => p.id === 'shoulder');
   const [l, r] = armsFor(pose, 2);
   const close = [person(l, { cx: 0.5, s: 0.4 }), person(r, { cx: 0.5 + 0.4 * 0.4, s: 0.4 })];
   const apart = [person(l, { cx: 0.3, s: 0.4 }), person(r, { cx: 1.0, s: 0.4 })];
@@ -77,7 +79,7 @@ test('어깨동무는 두 사람이 붙어 있어야 통과', () => {
 });
 
 test('인원보다 많이 잡히면 크게 보이는(가까운) 사람으로 판정', () => {
-  const pose = POSES.find((p) => p.id === 'wave');
+  const pose = POSES_BY_COUNT[1].find((p) => p.id === 'wave');
   const front = person('wave', { cx: 0.7, s: 0.5 });
   const passerby = person('down', { cx: 0.2, s: 0.15 });
   const m = matchPose(pose, [passerby, front], 1);
@@ -94,4 +96,28 @@ test('촬영 범위를 벗어나거나 같은 칸에 모인 사람은 빈 칸을
   const above = person('down', { cx: 0.86, cy: 0.32 });
   const framed = peopleInFrame([outside, background, right, above, left], area);
   assert.deepEqual(peopleInSlots(framed, 4, area), [left, null, null, right]);
+});
+
+test('인원별 네 컷의 후보에 해당 인원의 PNG가 모두 들어 있다', () => {
+  for (const [count, expected] of [[1, 12], [2, 14], [3, 14], [4, 11]]) {
+    const plans = recommendPlan(count, null);
+    assert.equal(new Set(plans.map(([first]) => first.id)).size, 4);
+    for (const candidates of plans) assert.equal(new Set(candidates.map((p) => p.id)).size, expected);
+    for (const pose of plans[0]) {
+      const png = readFileSync(new URL(`../assets/poses/${count}/${pose.id}.png`, import.meta.url));
+      const [width, height, left, right] = pose.image;
+      assert.equal(png.readUInt32BE(16), width);
+      assert.equal(png.readUInt32BE(20), height);
+      for (const layout of ['grid', 'strip']) {
+        const aspect = cellAspect(layout);
+        const placement = guidePlacement(pose.image, aspect);
+        assert.ok((right - left) / height * placement.height / 100 <= aspect);
+      }
+    }
+  }
+});
+
+test('관절 판정이 없는 그룹 포즈는 차렷 자세로 통과하지 않는다', () => {
+  const pose = POSES_BY_COUNT[3].find((p) => p.id === 'centerStar');
+  assert.equal(matchPose(pose, [person('down'), person('down'), person('down')], 3).ok, false);
 });

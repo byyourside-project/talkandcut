@@ -1,7 +1,7 @@
 import { FilterRenderer } from './glfilter.js';
 import { NEUTRAL, PARAM_META, MOODS, applyMood, explain, nearestMood } from './emotion.js';
 import { parseUtterance } from './intent.js';
-import { POSES, recommendPlan, drawDebug, PoseDetector, matchPose, peopleInFrame, peopleInSlots } from './pose.js';
+import { POSES_BY_COUNT, recommendPlan, guidePlacement, drawDebug, PoseDetector, matchPose, peopleInFrame, peopleInSlots } from './pose.js';
 import { LAYOUTS, THEMES, themeById, cellAspect, coverCrop, recommendFrames, composite, averageColor } from './frames.js';
 import { Voice } from './voice.js';
 
@@ -18,7 +18,7 @@ const els = {
   stage: $('stage'), preview: $('preview'), overlay: $('overlay'), video: $('video'),
   camMsg: $('camMsg'), camBtn: $('camBtn'), countdown: $('countdown'), shutter: $('shutter'),
   poseChip: $('poseChip'), poseTip: $('poseTip'), positionHint: $('positionHint'), positions: $('positions'),
-  soloVGuide: $('soloVGuide'), soloVBtn: $('soloVBtn'),
+  poseGuide: $('poseGuide'), poseSelect: $('poseSelect'), applyPoseBtn: $('applyPoseBtn'), poseMatchHint: $('poseMatchHint'),
   cutNow: $('cutNow'), cutTrack: $('cutTrack'), voicebar: $('voicebar'), micBtn: $('micBtn'),
   voiceState: $('voiceState'), voicePrompt: $('voicePrompt'), reply: $('reply'), typedForm: $('typedForm'), typedInput: $('typedInput'),
   strip: $('strip'), saveBtn: $('saveBtn'), restartBtn: $('restartBtn'),
@@ -59,6 +59,7 @@ const state = {
 const live = new FilterRenderer(els.preview);
 const offscreen = new FilterRenderer(document.createElement('canvas'));
 const detector = new PoseDetector();
+const poseGuideImage = els.poseGuide.querySelector('img');
 // ?debug=1 이면 랜드마크·판정 수치를 뷰파인더에 겹쳐 그린다 (실제 카메라에서 TH 튜닝용)
 const DEBUG = new URLSearchParams(location.search).has('debug');
 els.overlay.hidden = !DEBUG;
@@ -268,7 +269,9 @@ function updateControls() {
   els.saveBtn.disabled = !state.shots.some(Boolean);
   els.resultSaveBtn.disabled = !state.shots.every(Boolean);
   els.retakeRow.hidden = !state.shots.some(Boolean) || busy || retaking || (shooting && !state.cameraOn);
-  els.autoShutter.disabled = !shooting || !detector.ready;
+  const pose = currentPose();
+  els.autoShutter.disabled = !shooting || !detector.ready || !pose?.arms;
+  els.poseMatchHint.hidden = !pose || !!pose.arms;
 }
 
 function startSession(event) {
@@ -403,8 +406,9 @@ function onPeople(now, people, area) {
   showPositions(slots);
   const pose = currentPose();
   if (!pose) return null;
-  const match = matchPose(pose, slots.filter(Boolean), state.headcount);
-  const armed = state.armed !== null || (els.autoShutter.checked && state.retake === null);
+  // 함께하는 포즈에서는 한 칸에 얼굴이 겹쳐도 각 사람의 관절을 사용한다.
+  const match = matchPose(pose, framed, state.headcount);
+  const armed = state.armed !== null || (!els.autoShutter.disabled && els.autoShutter.checked && state.retake === null);
   if (!armed || state.counting || !match.ok) {
     state.matchSince = 0;
   } else if (!state.matchSince) {
@@ -424,6 +428,7 @@ function requestCapture({ delay = 3, when } = {}) {
   if (!state.cameraOn) return '카메라 연결을 확인해 주세요';
   if (state.counting) return '이미 촬영 중이에요';
   if (when === 'POSE_MATCH') {
+    if (!currentPose(idx)?.arms) return '이 포즈는 “찍어줘”라고 말하면 촬영할 수 있어요';
     if (!detector.ready) {
       startCountdown(delay, idx);
       return `포즈 인식이 꺼져 있어서 ${delay}초 뒤에 찍을게요`;
@@ -573,6 +578,7 @@ function restart(fullscreen = false) {
 // ---------- 포즈 ----------
 
 function replan() {
+  resetPoseMatch();
   state.plan = recommendPlan(state.headcount, state.moodId);
   state.pick = [0, 0, 0, 0];
   renderPlan();
@@ -580,7 +586,6 @@ function replan() {
 
 function setHeadcount(n, manual = true) {
   state.headcount = Math.max(1, Math.min(4, n));
-  els.soloVBtn.hidden = state.headcount !== 1;
   if (manual) state.headcountManual = true;
   els.positions.style.setProperty('--positions', state.headcount);
   els.positions.replaceChildren(...Array.from({ length: state.headcount }, () => {
@@ -608,30 +613,60 @@ function renderPlan() {
     button.querySelector('b').textContent = p.name;
     button.querySelector('small').textContent = p.tip;
     button.title = '이 컷의 포즈 바꾸기';
-    button.addEventListener('click', () => { state.pick[i]++; renderPlan(); els.plan.children[i].firstElementChild.focus(); });
+    button.addEventListener('click', () => {
+      state.pick[i]++;
+      if (i === cur) resetPoseMatch();
+      renderPlan();
+      els.plan.children[i].firstElementChild.focus();
+    });
     els.plan.append(li);
   });
+  const options = state.plan[cur] ?? [];
+  els.poseSelect.replaceChildren(...options.map((pose) => new Option(pose.name, pose.id)));
+  els.poseSelect.disabled = !options.length;
+  els.applyPoseBtn.disabled = !options.length;
+  if (options.length) els.poseSelect.value = currentPose().id;
   updatePoseGuide();
+  updateControls();
 }
 
 function updatePoseGuide() {
   const pose = currentPose();
-  const showSoloV = state.cameraOn && state.headcount === 1 && pose?.id === 'v';
-  els.soloVGuide.hidden = !showSoloV;
-  els.viewfinder.classList.toggle('has-pose-image', showSoloV);
-  els.positions.hidden = showSoloV;
-  els.poseChip.hidden = !state.cameraOn || !pose || showSoloV;
-  if (pose) els.poseTip.textContent = pose.tip;
+  if (!state.cameraOn || !pose) {
+    showPoseImage(false);
+    return;
+  }
+
+  const src = `assets/poses/${state.headcount}/${pose.id}.png`;
+  const placement = guidePlacement(pose.image, cellAspect(state.layout));
+  poseGuideImage.style.setProperty('--guide-height', `${placement.height}%`);
+  poseGuideImage.style.setProperty('--guide-offset', `-${placement.shift}%`);
+  els.poseTip.textContent = pose.tip;
+  if (poseGuideImage.getAttribute('src') !== src) poseGuideImage.src = src;
+  showPoseImage(poseGuideImage.complete && poseGuideImage.naturalWidth > 0);
 }
 
-function selectSoloV() {
-  if (state.headcount !== 1) return '브이 이미지 가이드는 1인 촬영에서 사용할 수 있어요.';
+function showPoseImage(visible) {
+  els.poseGuide.hidden = !visible;
+  els.viewfinder.classList.toggle('has-pose-image', visible);
+  els.positions.hidden = visible;
+  els.poseChip.hidden = !state.cameraOn || !currentPose() || visible;
+}
+
+function resetPoseMatch() {
+  state.armed = null;
+  state.matchSince = 0;
+}
+
+function selectPose(id) {
   const cut = state.retake ?? nextIndex();
   if (cut < 0) return '네 컷을 다 찍었어요';
-  state.pick[cut] = state.plan[cut].findIndex((pose) => pose.id === 'v');
-  state.matchSince = 0;
+  const pick = state.plan[cut].findIndex((pose) => pose.id === id);
+  if (pick < 0) return '현재 인원에 맞는 포즈를 메뉴에서 골라 주세요';
+  state.pick[cut] = pick;
+  resetPoseMatch();
   renderPlan();
-  return '브이 포즈 가이드를 띄웠어요';
+  return `${currentPose().name} 가이드를 띄웠어요`;
 }
 
 function updateCutUI() {
@@ -877,12 +912,13 @@ function execute(a) {
       return p ? `이번 컷은 ${p.name}. ${p.tip}` : '네 컷을 다 찍었어요';
     }
     case 'POSE_V':
-      return selectSoloV();
+      return selectPose(['v', 'v', 'zigzagV', 'twoLevelV'][state.headcount - 1]);
     case 'POSE_NEXT': {
       showTab('pose');
       const i = state.retake ?? nextIndex();
       if (i < 0) return '네 컷을 다 찍었어요';
       state.pick[i]++;
+      resetPoseMatch();
       renderPlan();
       return `그럼 ${currentPose().name} 어때요`;
     }
@@ -1030,7 +1066,13 @@ els.resultHomeBtn.addEventListener('click', goHome);
 els.compareToggle.addEventListener('change', scheduleStrip);
 els.restartBtn.addEventListener('click', () => { restart(true); reply('처음부터 다시 찍어요', false); });
 els.homeBtn.addEventListener('click', goHome);
-els.soloVBtn.addEventListener('click', () => { closeMenu(); reply(selectSoloV(), false); });
+poseGuideImage.addEventListener('load', updatePoseGuide);
+poseGuideImage.addEventListener('error', () => showPoseImage(false));
+els.applyPoseBtn.addEventListener('click', () => {
+  const message = selectPose(els.poseSelect.value);
+  closeMenu();
+  reply(message, false);
+});
 els.poseNextBtn.addEventListener('click', () => reply(execute({ action: 'POSE_NEXT' }), false));
 els.resetFilterBtn.addEventListener('click', () => {
   resetFilter();
@@ -1072,4 +1114,4 @@ document.fonts?.ready.then(scheduleStrip);
 requestAnimationFrame(frame);
 els.startBtn.disabled = false;
 
-if (DEBUG) window.talkandcut = { state, handleUtterance, POSES };
+if (DEBUG) window.talkandcut = { state, handleUtterance, POSES_BY_COUNT };

@@ -78,7 +78,7 @@
       <div class="viewfinder" id="viewfinder" aria-hidden="true">
         <i></i><i></i><i></i><i></i>
         <div class="positions" id="positions"></div>
-        <div class="pose-image" id="soloVGuide" hidden><img src="assets/pose-v-solo.png" width="1671" height="941" alt=""></div>
+        <div class="pose-image" id="poseGuide" hidden><img alt="" decoding="async"></div>
       </div>
       <canvas id="overlay" aria-hidden="true" hidden></canvas>
 
@@ -200,9 +200,14 @@
               </div>
               <ol class="plan" id="plan"></ol>
               <div class="row">
+                <label for="poseSelect">이번 컷 포즈</label>
+                <select id="poseSelect"></select>
+                <button class="btn" id="applyPoseBtn" type="button">가이드 보기</button>
+              </div>
+              <div class="row">
                 <button class="btn" id="poseNextBtn" type="button">다른 포즈</button>
-                <button class="btn" id="soloVBtn" type="button" hidden>1인 브이 포즈</button>
                 <label class="check"><input type="checkbox" id="autoShutter"> 포즈를 맞추면 자동으로 찍기</label>
+                <span class="hint" id="poseMatchHint" hidden>이 포즈는 “찍어줘” 또는 터치로 촬영해 주세요.</span>
               </div>
             </div>
 

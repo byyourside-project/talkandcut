@@ -1,57 +1,40 @@
 // 포즈 추천 + (선택) MediaPipe 포즈 인식으로 인원수 감지·포즈 일치 판정.
 
-// roles: 네 컷의 흐름 — opener(자연스럽게) → cute → fun → finale(함께)
-export const POSES = [
-  { id: 'smile', name: '자연스러운 미소', tip: '어깨 힘을 빼고 편하게 웃어 보세요.', each: 'down', min: 1, max: 4, moods: ['calm', 'warm', 'bright', 'fresh'], roles: ['opener'] },
-  { id: 'wave', name: '손 흔들기', tip: '친구를 만난 것처럼 가볍게 손을 흔들어 보세요.', each: 'wave', min: 1, max: 4, moods: ['happy', 'fresh', 'bright'], roles: ['opener'] },
-  { id: 'v', name: '얼굴 옆 브이', tip: '볼 옆에 브이를 하고 고개를 살짝 기울여 보세요.', each: 'v', min: 1, max: 4, moods: ['happy', 'bright', 'romantic', 'vivid'], roles: ['cute', 'opener'] },
-  { id: 'cheek', name: '양 볼 꽃받침', tip: '두 손을 볼 옆에 대고 살짝 웃어 보세요.', each: 'cheek', min: 1, max: 4, moods: ['romantic', 'happy', 'bright', 'dreamy'], roles: ['cute'] },
-  { id: 'chin', name: '턱 괴기', tip: '주먹을 턱 아래에 대고 눈을 살짝 내려 봐요', each: 'chin', min: 1, max: 3, moods: ['chic', 'calm', 'dreamy', 'moody', 'gloomy'], roles: ['cute', 'opener'] },
-  { id: 'surprise', name: '깜짝 놀라기', tip: '깜짝 놀란 척, 두 손을 입가에 모아 보세요.', each: 'surprise', min: 1, max: 4, moods: ['happy', 'vivid', 'retro'], roles: ['fun'] },
-  { id: 'fist', name: '파이팅', tip: '두 주먹을 얼굴 옆까지 올리고 힘차게', each: 'fist', min: 1, max: 4, moods: ['happy', 'vivid', 'fresh'], roles: ['fun'] },
-  { id: 'point', name: '카메라 가리키기', tip: '렌즈를 손가락으로 콕 찌르듯 가리켜요', each: 'point', min: 1, max: 4, moods: ['happy', 'vivid', 'chic'], roles: ['fun'] },
-  { id: 'cross', name: '팔짱 시크', tip: '팔짱을 끼고 무표정으로 렌즈를 봐요', each: 'cross', min: 1, max: 4, moods: ['chic', 'cool', 'mono', 'moody'], roles: ['opener', 'fun'] },
-  { id: 'hips', name: '허리에 손', tip: '양손을 허리에 올리고 팔꿈치를 바깥으로', each: 'hips', min: 1, max: 3, moods: ['chic', 'vivid', 'retro'], roles: ['fun', 'opener'] },
-  { id: 'think', name: '생각하는 사람', tip: '한 손은 턱, 한 손은 팔짱. 고개를 갸웃', each: 'think', min: 1, max: 3, moods: ['calm', 'gloomy', 'moody', 'retro', 'mono'], roles: ['fun'] },
-  { id: 'heartTop', name: '머리 위 큰 하트', tip: '머리 위에 각자 하트를 만들어 보세요.', each: 'heartTop', min: 1, max: 4, moods: ['romantic', 'happy', 'warm', 'bright'], roles: ['finale'] },
-  { id: 'halfHeart', name: '반쪽 하트 합체', tip: '둘이 팔을 하나씩 올려 큰 하트 하나를 완성해요', people: { 2: ['halfHeartL', 'halfHeartR'] }, min: 2, max: 2, moods: ['romantic', 'warm', 'dreamy'], roles: ['finale'] },
-  { id: 'shoulder', name: '어깨동무', tip: '얼굴은 각자 자리에 두고 옆 사람 어깨에 팔을 올려 보세요.', people: { 2: ['shoulderL', 'shoulderR'], 3: ['shoulderL', 'down', 'shoulderR'], 4: ['shoulderL', 'shoulderL', 'shoulderR', 'shoulderR'] }, min: 2, max: 4, moods: ['warm', 'happy', 'calm', 'retro', 'gloomy'], roles: ['finale'] },
-  { id: 'stairs', name: '계단 높이', tip: '각자 자리에서 고개 높이를 조금씩 다르게 해 보세요.', people: { 3: ['v', 'chin', 'cheek'], 4: ['v', 'chin', 'cheek', 'fist'] }, min: 3, max: 4, moods: ['happy', 'vivid', 'retro'], roles: ['fun', 'finale'] },
-];
+import { POSES_BY_COUNT } from './pose-catalog.js';
+
+export { POSES_BY_COUNT };
 
 const ROLE_ORDER = ['opener', 'cute', 'fun', 'finale'];
 
-function fits(p, n) {
-  return n >= p.min && n <= p.max;
+function score(pose, moodId, role) {
+  return (pose.roles.includes(role) ? 3 : 0) + (pose.moods.includes(moodId) ? 2 : 0);
 }
 
-function score(p, n, moodId, role) {
-  if (!fits(p, n)) return -Infinity;
-  let s = 0;
-  if (p.roles.includes(role)) s += 3;
-  if (moodId && p.moods.includes(moodId)) s += 2;
-  if (p.people && p.people[n]) s += 1.5; // 인원 전용 포즈 우대
-  return s;
-}
-
-/** 4컷 포즈 플랜: 컷마다 후보 목록(점수순)을 돌려준다. 같은 포즈가 연속 추천되지 않게 한다. */
-export function recommendPlan(n, moodId) {
+/** 같은 인원의 포즈 중 네 컷에 맞는 후보를 골라 각 컷에서 모두 선택할 수 있게 한다. */
+export function recommendPlan(count, moodId) {
+  const poses = POSES_BY_COUNT[count];
   const used = new Set();
   return ROLE_ORDER.map((role) => {
-    const ranked = POSES
-      .map((p) => ({ p, s: score(p, n, moodId, role) }))
-      .filter((x) => x.s > -Infinity)
-      .sort((a, b) => b.s - a.s)
-      .map((x) => x.p);
-    const first = ranked.find((p) => !used.has(p.id)) ?? ranked[0];
+    const ranked = [...poses].sort((a, b) => score(b, moodId, role) - score(a, moodId, role));
+    const first = ranked.find((pose) => !used.has(pose.id)) ?? ranked[0];
     used.add(first.id);
-    return [first, ...ranked.filter((p) => p !== first)];
+    return [first, ...ranked.filter((pose) => pose !== first)];
   });
 }
 
-export function armsFor(pose, n) {
-  if (pose.people?.[n]) return pose.people[n];
-  return Array.from({ length: n }, () => pose.each ?? 'down');
+export function armsFor(pose, count) {
+  if (Array.isArray(pose.arms)) return pose.arms;
+  return pose.arms ? Array(count).fill(pose.arms) : null;
+}
+
+/** 16:9 이미지 안의 투명 여백을 제외하고 윤곽선이 프레임에 맞도록 배치한다. */
+export function guidePlacement([width, height, left, right], aspect) {
+  const outlineWidth = right - left;
+  const scale = Math.min(1, 0.94 * aspect * height / outlineWidth);
+  return {
+    height: scale * 100,
+    shift: (left + right) / (2 * width) * 100,
+  };
 }
 
 /** 미러링된 영상 좌표에서 얼굴이 촬영 범위 안에 있는 사람을 고른다. */
@@ -203,7 +186,7 @@ const GROUP_CHECKS = {
 /** 감지된 사람들이 포즈를 따라 했는지 판정. {matched, total, ok, group, results, picked} */
 export function matchPose(pose, people, n) {
   const arms = armsFor(pose, n);
-  if (!people || people.length < arms.length) return { matched: 0, total: arms.length, ok: false, results: [] };
+  if (!arms || !people || people.length < n) return { matched: 0, total: n, ok: false, results: [] };
   // 화면에 크게 잡힌(가까운) 사람 n명을 고른 뒤 왼쪽부터 가이드에 대응
   const bodies = people
     .map((lm) => ({ lm, b: side(lm) }))
@@ -212,7 +195,7 @@ export function matchPose(pose, people, n) {
     .slice(0, arms.length)
     .sort((a, c) => a.b.nose.x - c.b.nose.x);
   const results = bodies.map(({ b, sw }, i) => (CHECKS[arms[i]] ?? CHECKS.down)(b, sw));
-  const group = GROUP_CHECKS[pose.id]?.(bodies.map((x) => x.b)) ?? true;
+  const group = GROUP_CHECKS[pose.group]?.(bodies.map((x) => x.b)) ?? true;
   const matched = results.filter(Boolean).length;
   return { matched, total: arms.length, ok: matched === arms.length && group, group, results, picked: bodies.map((x) => x.lm) };
 }
