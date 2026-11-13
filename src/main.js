@@ -638,8 +638,9 @@ function updatePoseGuide() {
   }
 
   const src = `assets/poses/${state.headcount}/${pose.id}.png`;
-  const placement = guidePlacement(pose.image, cellAspect(state.layout));
+  const placement = guidePlacement(pose, cellAspect(state.layout));
   poseGuideImage.style.setProperty('--guide-height', `${placement.height}%`);
+  poseGuideImage.style.setProperty('--guide-top', `${placement.top}%`);
   poseGuideImage.style.setProperty('--guide-offset', `-${placement.shift}%`);
   els.poseTip.textContent = pose.tip;
   if (poseGuideImage.getAttribute('src') !== src) poseGuideImage.src = src;

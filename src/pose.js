@@ -27,13 +27,22 @@ export function armsFor(pose, count) {
   return pose.arms ? Array(count).fill(pose.arms) : null;
 }
 
-/** 16:9 이미지 안의 투명 여백을 제외하고 윤곽선이 프레임에 맞도록 배치한다. */
-export function guidePlacement([width, height, left, right], aspect) {
-  const outlineWidth = right - left;
-  const scale = Math.min(1, 0.94 * aspect * height / outlineWidth);
+// 얼굴 중심을 사진 위쪽 1/3 근처에 맞추고, 위로 든 손과 아래쪽 윤곽에도 여백을 남긴다.
+export function guidePlacement({ image: [width, height], bounds, faceY }, aspect) {
+  const [left, top, right, bottom] = bounds;
+  const edge = 0.06;
+  const faceTarget = 0.36;
+  const scale = Math.min(
+    1,
+    (1 - 2 * edge) * aspect * height / (right - left),
+    (1 - 2 * edge) * height / (bottom - top),
+    (1 - edge - faceTarget) / (bottom / height - faceY),
+    (faceTarget - edge) / (faceY - top / height),
+  );
   return {
     height: scale * 100,
     shift: (left + right) / (2 * width) * 100,
+    top: (faceTarget - faceY * scale) * 100,
   };
 }
 

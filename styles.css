@@ -89,7 +89,7 @@ h1, h2, h3, p, figure { margin: 0; }
 .viewfinder > i:nth-child(4) { bottom: 0; right: 0; border-left: 0; border-top: 0; border-radius: 0 0 7px; }
 .viewfinder.has-pose-image > i { visibility: hidden; }
 .pose-image { position: absolute; inset: 0; overflow: hidden; }
-.pose-image img { position: absolute; bottom: 0; left: 50%; width: auto; max-width: none; height: var(--guide-height, 100%); transform: translateX(var(--guide-offset, -50%)); opacity: .84; filter: brightness(0) invert(1) drop-shadow(0 1px 2px #160e23); }
+.pose-image img { position: absolute; top: var(--guide-top, 0%); left: 50%; width: auto; max-width: none; height: var(--guide-height, 100%); transform: translateX(var(--guide-offset, -50%)); opacity: .84; filter: brightness(0) invert(1) drop-shadow(0 1px 2px #160e23); }
 .shoot-top { position: absolute; z-index: 2; top: max(18px, env(safe-area-inset-top)); left: max(var(--edge), env(safe-area-inset-left)); right: max(var(--edge), env(safe-area-inset-right)); display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; pointer-events: none; }
 .shoot-brand { font-size: clamp(16px, 2.7vw, 24px); text-shadow: 0 2px 5px #0008; }
 .shoot-brand .brand-icon { width: 33px; height: 33px; }
@@ -229,6 +229,13 @@ h1, h2, h3, p, figure { margin: 0; }
   .result-grid { grid-template-columns: minmax(0, 1fr); }
   .strip-holder { position: static; padding: 12px; gap: 8px; }
   #strip { max-height: 32svh; }
+}
+
+@media (max-width: 720px) and (max-aspect-ratio: 3/5) {
+  .session[data-phase="shoot"] .menu-toggle {
+    top: max(82px, calc(env(safe-area-inset-top) + 68px));
+    transform: none;
+  }
 }
 
 @media (orientation: landscape) and (max-height: 540px) {

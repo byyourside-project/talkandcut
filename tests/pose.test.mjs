@@ -105,13 +105,20 @@ test('인원별 네 컷의 후보에 해당 인원의 PNG가 모두 들어 있�
     for (const candidates of plans) assert.equal(new Set(candidates.map((p) => p.id)).size, expected);
     for (const pose of plans[0]) {
       const png = readFileSync(new URL(`../assets/poses/${count}/${pose.id}.png`, import.meta.url));
-      const [width, height, left, right] = pose.image;
+      const [width, height] = pose.image;
+      const [left, top, right, bottom] = pose.bounds;
       assert.equal(png.readUInt32BE(16), width);
       assert.equal(png.readUInt32BE(20), height);
       for (const layout of ['grid', 'strip']) {
         const aspect = cellAspect(layout);
-        const placement = guidePlacement(pose.image, aspect);
-        assert.ok((right - left) / height * placement.height / 100 <= aspect);
+        const placement = guidePlacement(pose, aspect);
+        const scale = placement.height / 100;
+        const outlineTop = placement.top / 100 + top / height * scale;
+        const outlineBottom = placement.top / 100 + bottom / height * scale;
+        const face = placement.top / 100 + pose.faceY * scale;
+        assert.ok((right - left) / height * scale <= aspect * 0.881);
+        assert.ok(outlineTop >= 0.059 && outlineBottom <= 0.941);
+        assert.ok(face >= 0.35 && face <= 0.37);
       }
     }
   }
