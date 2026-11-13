@@ -84,3 +84,11 @@ test('홈으로 나가기와 촬영 취소는 각각 단독 명령이다', () =>
   assert.deepEqual(acts('촬영 취소'), ['CANCEL']);
   assert.deepEqual(acts('문구는 홈으로로 해줘'), ['CAPTION']);
 });
+
+test('브이 포즈를 먼저 선택하고 이어서 촬영할 수 있다', () => {
+  assert.deepEqual(parseUtterance('브이 포즈'), [{ action: 'POSE_V' }]);
+  assert.deepEqual(parseUtterance('브이 포즈로 바로 찍어'), [
+    { action: 'POSE_V' },
+    { action: 'CAPTURE', delay: 0 },
+  ]);
+});

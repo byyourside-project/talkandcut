@@ -6,7 +6,7 @@
 //   { action: 'START' } | { action: 'HOME' }
 //   { action: 'FILTER', mode, moodIds, deltas, label }
 //   { action: 'RESET_FILTER' }
-//   { action: 'POSE_NEXT' } | { action: 'POSE_PLAN' }
+//   { action: 'POSE_NEXT' } | { action: 'POSE_PLAN' } | { action: 'POSE_V' }
 //   { action: 'HEADCOUNT', count }
 //   { action: 'FRAME_RECOMMEND' } | { action: 'FRAME_NEXT' } | { action: 'LAYOUT', layout }
 //   { action: 'CAPTION', text }
@@ -82,7 +82,9 @@ export function parseUtterance(raw, ctx = {}) {
   }
 
   // 포즈
-  if (/포즈/.test(t)) {
+  if (/^(?:브이|[vV])$|(?:브이|[vV])\s*(?:포즈|자세|하고|로\s*찍)/.test(t)) {
+    actions.push({ action: 'POSE_V' });
+  } else if (/포즈/.test(t)) {
     if (/다른|바꿔|다음|별로|또/.test(t)) actions.push({ action: 'POSE_NEXT' });
     else if (/추천|알려|뭐|어떻게|골라/.test(t)) actions.push({ action: 'POSE_PLAN' });
   }
@@ -92,7 +94,7 @@ export function parseUtterance(raw, ctx = {}) {
     if (/다른|바꿔|다음|별로/.test(t)) actions.push({ action: 'FRAME_NEXT' });
     else actions.push({ action: 'FRAME_RECOMMEND' });
   }
-  if (/세로\s?(로|형|네컷|한\s?줄)|한\s?줄|스트립/.test(t)) actions.push({ action: 'LAYOUT', layout: 'strip' });
+  if (/1\s*[xX×]\s*4|세로\s?(로|형|네컷|한\s?줄)|한\s?줄|스트립/.test(t)) actions.push({ action: 'LAYOUT', layout: 'strip' });
   else if (/(2|두)\s?([xX×]|바이|곱하기)\s?(2|두)|격자|정사각|네모\s?칸|큰\s?사진/.test(t)) actions.push({ action: 'LAYOUT', layout: 'grid' });
 
   if (/저장|다운로드|다운|뽑아|인화|출력/.test(t)) actions.push({ action: 'SAVE' });

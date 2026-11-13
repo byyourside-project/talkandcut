@@ -2,12 +2,12 @@ import { FilterRenderer } from './glfilter.js';
 import { NEUTRAL, PARAM_META, MOODS, applyMood, explain, nearestMood } from './emotion.js';
 import { parseUtterance } from './intent.js';
 import { POSES, recommendPlan, drawDebug, PoseDetector, matchPose, peopleInFrame, peopleInSlots } from './pose.js';
-import { LAYOUTS, THEMES, themeById, cellAspect, recommendFrames, composite, averageColor } from './frames.js';
+import { LAYOUTS, THEMES, themeById, cellAspect, coverCrop, recommendFrames, composite, averageColor } from './frames.js';
 import { Voice } from './voice.js';
 
 const $ = (id) => document.getElementById(id);
 const els = {
-  welcome: $('welcome'), session: $('session'), startBtn: $('startBtn'), result: $('result'),
+  welcome: $('welcome'), session: $('session'), shootSetup: $('shootSetup'), startBtn: $('startBtn'), result: $('result'),
   resultTitle: $('resultTitle'), frameLabel: $('frameLabel'), menuBtn: $('menuBtn'), controls: $('controls'),
   editPanel: $('editPanel'), shootPanel: $('shootPanel'), resultPanel: $('resultPanel'),
   shootRetake: $('shootRetake'), resultRetake: $('resultRetake'), resultStatus: $('resultStatus'),
@@ -18,13 +18,14 @@ const els = {
   stage: $('stage'), preview: $('preview'), overlay: $('overlay'), video: $('video'),
   camMsg: $('camMsg'), camBtn: $('camBtn'), countdown: $('countdown'), shutter: $('shutter'),
   poseChip: $('poseChip'), poseTip: $('poseTip'), positionHint: $('positionHint'), positions: $('positions'),
+  soloVGuide: $('soloVGuide'), soloVBtn: $('soloVBtn'),
   cutNow: $('cutNow'), cutTrack: $('cutTrack'), voicebar: $('voicebar'), micBtn: $('micBtn'),
   voiceState: $('voiceState'), voicePrompt: $('voicePrompt'), reply: $('reply'), typedForm: $('typedForm'), typedInput: $('typedInput'),
   strip: $('strip'), saveBtn: $('saveBtn'), restartBtn: $('restartBtn'),
   headcount: $('headcount'), detectState: $('detectState'), plan: $('plan'), poseNextBtn: $('poseNextBtn'),
   autoShutter: $('autoShutter'), moods: $('moods'), explain: $('explain'), sliders: $('sliders'),
   resetFilterBtn: $('resetFilterBtn'), compareToggle: $('compareToggle'),
-  recs: $('recs'), themes: $('themes'), layoutSeg: $('layoutSeg'), captionInput: $('captionInput'),
+  recs: $('recs'), themes: $('themes'), captionInput: $('captionInput'),
   lastJson: $('lastJson'), ttsToggle: $('ttsToggle'),
 };
 
@@ -124,13 +125,15 @@ function showCameraMessage(message) {
   els.camMsg.querySelector('p').textContent = message;
   els.camMsg.hidden = !message;
   els.viewfinder.hidden = !!message;
-  els.poseChip.hidden = !!message || !currentPose();
+  els.stage.classList.toggle('has-camera', state.cameraOn);
+  updatePoseGuide();
   updateControls();
 }
 
 function stopCamera() {
   cameraRequest = null;
   state.cameraOn = false;
+  els.stage.classList.remove('has-camera');
   state.stableCount = { n: 0, frames: 0 };
   showPositions();
   const stream = els.video.srcObject;
@@ -268,8 +271,13 @@ function updateControls() {
   els.autoShutter.disabled = !shooting || !detector.ready;
 }
 
-function startSession() {
+function startSession(event) {
+  event.preventDefault();
+  const layout = new FormData(els.shootSetup).get('layout');
+  if (layout !== 'grid' && layout !== 'strip') return;
   resetSession();
+  state.layout = layout;
+  syncFrameUI();
   setPhase('shoot');
   els.menuBtn.focus({ preventScroll: true });
   // 카메라와 마이크 권한 대화상자가 전체 화면 뒤에 가려지지 않도록 한다.
@@ -307,7 +315,6 @@ function resetSession() {
   state.touchRetake = false;
   els.resultStatus.textContent = '';
   state.shots = [null, null, null, null];
-  state.layout = 'strip';
   state.themeId = 'white';
   state.caption = '';
   state.headcountManual = false;
@@ -324,11 +331,7 @@ function resetSession() {
   showTab('pose');
 }
 
-// 두 출력 모양에서 공통으로 보존되는 범위. 감지와 화면 안내에 같은 좌표를 쓴다.
-const layoutAspects = Object.keys(LAYOUTS).map(cellAspect);
-const minLayoutAspect = Math.min(...layoutAspects);
-const maxLayoutAspect = Math.max(...layoutAspects);
-let finderSize = '';
+let previewSize = '';
 
 function frame(now) {
   requestAnimationFrame(frame);
@@ -337,39 +340,33 @@ function frame(now) {
 
   const { clientWidth, clientHeight } = els.stage;
   if (!clientWidth || !clientHeight) return;
-  // 세로 화면에서는 사진 구도를 중앙에 표시해 양쪽 사람까지 볼 수 있게 한다.
-  const previewHeightCss = Math.min(clientHeight, clientWidth / minLayoutAspect);
-  const dpr = Math.min(window.devicePixelRatio || 1, 1920 / clientWidth, 1440 / previewHeightCss);
-  const w = Math.round(clientWidth * dpr);
-  const h = Math.round(previewHeightCss * dpr);
+  const aspect = cellAspect(state.layout);
+  const previewWidth = Math.min(clientWidth, clientHeight * aspect);
+  const previewHeight = previewWidth / aspect;
+  const dpr = Math.min(window.devicePixelRatio || 1, 1920 / previewWidth, 1440 / previewHeight);
+  const w = Math.round(previewWidth * dpr);
+  const h = Math.round(previewHeight * dpr);
   live.setSize(w, h);
   live.render(v, v.videoWidth, v.videoHeight, els.compareToggle.checked ? NEUTRAL : state.params, { flip: true, seed: (now % 1000) / 100 });
 
-  const videoAspect = v.videoWidth / v.videoHeight;
-  const viewport = w / h;
-  const previewWidth = Math.min(videoAspect, viewport);
-  const previewHeight = Math.min(1, videoAspect / viewport);
-  const area = {
-    width: Math.min(previewWidth, minLayoutAspect),
-    height: Math.min(previewHeight, videoAspect / maxLayoutAspect),
-  };
-  area.left = (videoAspect - area.width) / 2;
-  area.top = (1 - area.height) / 2;
-  const finderW = 100 * area.width / previewWidth;
-  const finderH = 100 * area.height / previewHeight * previewHeightCss / clientHeight;
-  const size = `${finderW}:${finderH}:${previewHeightCss}:${clientHeight}`;
-  if (size !== finderSize) {
-    finderSize = size;
-    els.stage.style.setProperty('--preview-height', `${previewHeightCss}px`);
-    els.stage.classList.toggle('wide-preview', previewHeightCss < clientHeight);
-    els.viewfinder.style.setProperty('--finder-w', `${finderW}%`);
-    els.viewfinder.style.setProperty('--finder-h', `${finderH}%`);
+  const size = `${previewWidth}:${previewHeight}`;
+  if (size !== previewSize) {
+    previewSize = size;
+    els.stage.style.setProperty('--preview-width', `${previewWidth}px`);
+    els.stage.style.setProperty('--preview-height', `${previewHeight}px`);
   }
 
   if (!detector.ready || now - state.lastDetect <= 120) return;
   state.lastDetect = now;
   try {
     const people = detector.detect(v, now) ?? [];
+    const crop = coverCrop(v.videoWidth, v.videoHeight, aspect);
+    const area = {
+      left: crop.left / v.videoHeight,
+      top: crop.top / v.videoHeight,
+      width: crop.width / v.videoHeight,
+      height: crop.height / v.videoHeight,
+    };
     const match = onPeople(now, people, area);
     if (DEBUG) {
       const ov = els.overlay;
@@ -481,9 +478,10 @@ function shoot(idx) {
     return;
   }
   const c = document.createElement('canvas');
-  c.width = v.videoWidth;
-  c.height = v.videoHeight;
-  c.getContext('2d').drawImage(v, 0, 0);
+  const crop = coverCrop(v.videoWidth, v.videoHeight, cellAspect(state.layout));
+  c.width = Math.round(crop.width);
+  c.height = Math.round(crop.height);
+  c.getContext('2d').drawImage(v, crop.left, crop.top, crop.width, crop.height, 0, 0, c.width, c.height);
   state.shots[idx] = c;
   closeMenu();
   const replaced = state.retake !== null;
@@ -582,6 +580,7 @@ function replan() {
 
 function setHeadcount(n, manual = true) {
   state.headcount = Math.max(1, Math.min(4, n));
+  els.soloVBtn.hidden = state.headcount !== 1;
   if (manual) state.headcountManual = true;
   els.positions.style.setProperty('--positions', state.headcount);
   els.positions.replaceChildren(...Array.from({ length: state.headcount }, () => {
@@ -612,9 +611,27 @@ function renderPlan() {
     button.addEventListener('click', () => { state.pick[i]++; renderPlan(); els.plan.children[i].firstElementChild.focus(); });
     els.plan.append(li);
   });
-  const p = currentPose();
-  els.poseChip.hidden = !p || !!state.cameraStatus;
-  if (p) els.poseTip.textContent = p.tip;
+  updatePoseGuide();
+}
+
+function updatePoseGuide() {
+  const pose = currentPose();
+  const showSoloV = state.cameraOn && state.headcount === 1 && pose?.id === 'v';
+  els.soloVGuide.hidden = !showSoloV;
+  els.viewfinder.classList.toggle('has-pose-image', showSoloV);
+  els.positions.hidden = showSoloV;
+  els.poseChip.hidden = !state.cameraOn || !pose || showSoloV;
+  if (pose) els.poseTip.textContent = pose.tip;
+}
+
+function selectSoloV() {
+  if (state.headcount !== 1) return '브이 이미지 가이드는 1인 촬영에서 사용할 수 있어요.';
+  const cut = state.retake ?? nextIndex();
+  if (cut < 0) return '네 컷을 다 찍었어요';
+  state.pick[cut] = state.plan[cut].findIndex((pose) => pose.id === 'v');
+  state.matchSince = 0;
+  renderPlan();
+  return '브이 포즈 가이드를 띄웠어요';
 }
 
 function updateCutUI() {
@@ -716,21 +733,12 @@ function buildFrameUI() {
     b.addEventListener('click', () => { state.themeId = t.id; syncFrameUI(); scheduleStrip(); });
     els.themes.append(b);
   }
-  for (const b of els.layoutSeg.querySelectorAll('button')) {
-    b.addEventListener('click', () => setLayout(b.dataset.layout));
-  }
   els.captionInput.addEventListener('input', () => { state.caption = els.captionInput.value; scheduleStrip(); });
-}
-
-function setLayout(layout) {
-  state.layout = layout;
-  syncFrameUI();
-  scheduleStrip();
 }
 
 function recommendNow(apply) {
   const avg = averageColor(state.shots, state.params, offscreen);
-  state.recs = recommendFrames({ avgRgb: avg, moodId: state.moodId, headcount: state.headcount });
+  state.recs = recommendFrames({ avgRgb: avg, moodId: state.moodId });
   state.recIndex = 0;
   if (apply) applyRec(0);
   renderRecs();
@@ -741,7 +749,6 @@ function applyRec(i) {
   if (!r) return;
   state.recIndex = i;
   state.themeId = r.themeId;
-  if (r.layout !== state.layout) setLayout(r.layout);
   syncFrameUI();
   scheduleStrip();
 }
@@ -755,9 +762,9 @@ function renderRecs() {
     b.type = 'button';
     b.innerHTML = `<span class="sw"></span><b></b><small></small>`;
     b.querySelector('.sw').style.background = t.bg;
-    b.querySelector('b').textContent = `${t.name} · ${LAYOUTS[r.layout].name}`;
+    b.querySelector('b').textContent = `${t.name}`;
     b.querySelector('small').textContent = r.reasons.join('. ');
-    b.setAttribute('aria-pressed', String(state.themeId === r.themeId && state.layout === r.layout));
+    b.setAttribute('aria-pressed', String(state.themeId === r.themeId));
     b.addEventListener('click', () => applyRec(i));
     li.append(b);
     els.recs.append(li);
@@ -767,7 +774,6 @@ function renderRecs() {
 function syncFrameUI() {
   els.frameLabel.textContent = `${themeById(state.themeId).name} · ${LAYOUTS[state.layout].name}`;
   for (const b of els.themes.querySelectorAll('button')) b.setAttribute('aria-pressed', String(b.dataset.theme === state.themeId));
-  for (const b of els.layoutSeg.querySelectorAll('button')) b.setAttribute('aria-checked', String(b.dataset.layout === state.layout));
   for (const [i, b] of [...els.recs.querySelectorAll('button')].entries()) {
     const r = state.recs[i];
     b.setAttribute('aria-pressed', String(!!r && r.themeId === state.themeId && r.layout === state.layout));
@@ -815,6 +821,11 @@ function save() {
 function handleUtterance(text) {
   if (state.phase !== 'shoot' || state.touchRetake || shutterTimer !== null) return;
   let actions = parseUtterance(text, { hasFilter: !isNeutral(state.params) });
+  const layoutChange = actions.find((a) => a.action === 'LAYOUT' && a.layout !== state.layout);
+  if (layoutChange) {
+    reply(execute(layoutChange));
+    return;
+  }
   if (actions.some((a) => a.action === 'START')) {
     actions = actions.filter((a) => a.action !== 'CAPTURE' && a.action !== 'RETAKE');
   }
@@ -865,6 +876,8 @@ function execute(a) {
       const p = currentPose();
       return p ? `이번 컷은 ${p.name}. ${p.tip}` : '네 컷을 다 찍었어요';
     }
+    case 'POSE_V':
+      return selectSoloV();
     case 'POSE_NEXT': {
       showTab('pose');
       const i = state.retake ?? nextIndex();
@@ -888,9 +901,9 @@ function execute(a) {
       return `${themeById(state.recs[i].themeId).name}로 바꿨어요`;
     }
     case 'LAYOUT':
-      setLayout(a.layout);
-      renderRecs();
-      return `${LAYOUTS[a.layout].name}로 바꿨어요`;
+      return a.layout === state.layout
+        ? `이미 ${LAYOUTS[state.layout].name}을 선택했어요`
+        : '네컷 모양은 홈에서 촬영을 시작하기 전에 선택할 수 있어요';
     case 'CAPTION':
       state.caption = a.text;
       els.captionInput.value = a.text;
@@ -970,7 +983,7 @@ function closeMenu() {
   if (els.controls.open) els.controls.close();
 }
 
-els.startBtn.addEventListener('click', startSession);
+els.shootSetup.addEventListener('submit', startSession);
 els.menuBtn.addEventListener('click', () => {
   els.controls.showModal();
   els.menuBtn.setAttribute('aria-expanded', 'true');
@@ -1017,6 +1030,7 @@ els.resultHomeBtn.addEventListener('click', goHome);
 els.compareToggle.addEventListener('change', scheduleStrip);
 els.restartBtn.addEventListener('click', () => { restart(true); reply('처음부터 다시 찍어요', false); });
 els.homeBtn.addEventListener('click', goHome);
+els.soloVBtn.addEventListener('click', () => { closeMenu(); reply(selectSoloV(), false); });
 els.poseNextBtn.addEventListener('click', () => reply(execute({ action: 'POSE_NEXT' }), false));
 els.resetFilterBtn.addEventListener('click', () => {
   resetFilter();
@@ -1056,5 +1070,6 @@ updateCutUI();
 scheduleStrip();
 document.fonts?.ready.then(scheduleStrip);
 requestAnimationFrame(frame);
+els.startBtn.disabled = false;
 
 if (DEBUG) window.talkandcut = { state, handleUtterance, POSES };

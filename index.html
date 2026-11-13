@@ -30,11 +30,28 @@
         <p class="eyebrow"><span></span> 오늘을 남기는 가장 쉬운 방법</p>
         <h1 id="welcomeTitle">말하면,<br><em>찰칵<span>.</span></em></h1>
         <p class="intro">포즈를 잡고 “찍어줘”라고 말해 보세요.<br>우리만의 네컷이 완성돼요.</p>
-        <button class="start-button" id="startBtn" type="button">
-          <svg class="icon" aria-hidden="true"><use href="#icon-camera"/></svg>
-          <span>촬영 시작</span>
-          <svg class="icon arrow" aria-hidden="true"><use href="#icon-arrow"/></svg>
-        </button>
+        <form id="shootSetup" class="shoot-setup">
+          <fieldset class="layout-choice">
+            <legend>네컷 모양 선택</legend>
+            <div class="layout-options">
+              <label>
+                <input type="radio" name="layout" value="grid" required>
+                <span class="layout-icon layout-icon-grid" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+                <span>2×2 격자</span>
+              </label>
+              <label>
+                <input type="radio" name="layout" value="strip">
+                <span class="layout-icon layout-icon-strip" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+                <span>1×4 세로</span>
+              </label>
+            </div>
+          </fieldset>
+          <button class="start-button" id="startBtn" type="submit" disabled>
+            <svg class="icon" aria-hidden="true"><use href="#icon-camera"/></svg>
+            <span>촬영 시작</span>
+            <svg class="icon arrow" aria-hidden="true"><use href="#icon-arrow"/></svg>
+          </button>
+        </form>
         <p class="permission-note"><svg class="icon" aria-hidden="true"><use href="#icon-mic"/></svg> 촬영을 시작하면 카메라와 마이크 권한을 요청해요.</p>
       </div>
       <figure class="hero-art">
@@ -61,6 +78,7 @@
       <div class="viewfinder" id="viewfinder" aria-hidden="true">
         <i></i><i></i><i></i><i></i>
         <div class="positions" id="positions"></div>
+        <div class="pose-image" id="soloVGuide" hidden><img src="assets/pose-v-solo.png" width="1671" height="941" alt=""></div>
       </div>
       <canvas id="overlay" aria-hidden="true" hidden></canvas>
 
@@ -183,6 +201,7 @@
               <ol class="plan" id="plan"></ol>
               <div class="row">
                 <button class="btn" id="poseNextBtn" type="button">다른 포즈</button>
+                <button class="btn" id="soloVBtn" type="button" hidden>1인 브이 포즈</button>
                 <label class="check"><input type="checkbox" id="autoShutter"> 포즈를 맞추면 자동으로 찍기</label>
               </div>
             </div>
@@ -203,13 +222,6 @@
               <h2 class="pane-title">모든 프레임</h2>
               <div class="themes" id="themes"></div>
               <div class="row">
-                <span class="field-name">모양</span>
-                <div class="seg" id="layoutSeg" role="radiogroup" aria-label="프레임 모양">
-                  <button role="radio" data-layout="strip">세로 네컷</button>
-                  <button role="radio" data-layout="grid">2×2</button>
-                </div>
-              </div>
-              <div class="row">
                 <label class="field-name" for="captionInput">문구</label>
                 <input id="captionInput" type="text" maxlength="24" placeholder="예: 우리 졸업 축하해">
               </div>
@@ -220,8 +232,8 @@
                 <dt>찍기</dt><dd>“찍어줘” “5초 뒤에 찍어” “바로 찍어” “포즈 맞추면 찍어줘” “촬영 취소”</dd>
                 <dt>다시 찍기</dt><dd>“두 번째 컷 다시 찍어” “다시 찍을래”</dd>
                 <dt>보정</dt><dd>“몽환적인 느낌으로” “90년대 필름처럼” “조금 더 따뜻하게” “아까보다 덜 어둡게” “원본으로”</dd>
-                <dt>포즈</dt><dd>“우리 세 명이야” “포즈 추천해줘” “다른 포즈”</dd>
-                <dt>프레임</dt><dd>“프레임 추천해줘” “다른 프레임” “2×2로 바꿔” “문구는 우리 졸업 축하해로 해줘”</dd>
+                <dt>포즈</dt><dd>“우리 세 명이야” “포즈 추천해줘” “브이 포즈” “다른 포즈”</dd>
+                <dt>프레임</dt><dd>“프레임 추천해줘” “다른 프레임” “문구는 우리 졸업 축하해로 해줘”</dd>
                 <dt>이동</dt><dd>“처음부터 다시 시작” “홈으로”</dd>
               </dl>
               <details class="debug">

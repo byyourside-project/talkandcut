@@ -2,7 +2,7 @@
 
 export const LAYOUTS = {
   // 인생네컷 기본: 2x6인치 세로 스트립
-  strip: { name: '세로 네컷', w: 600, h: 1800, cols: 1, rows: 4, margin: 40, gap: 22, top: 40, bottom: 250 },
+  strip: { name: '1×4 세로 네컷', w: 600, h: 1800, cols: 1, rows: 4, margin: 40, gap: 22, top: 40, bottom: 250 },
   // 4x6인치 2×2
   grid: { name: '2×2 네컷', w: 1200, h: 1800, cols: 2, rows: 2, margin: 44, gap: 28, top: 44, bottom: 280 },
 };
@@ -23,6 +23,18 @@ export function cellRects(layoutId) {
 export function cellAspect(layoutId) {
   const r = cellRects(layoutId)[0];
   return r.w / r.h;
+}
+
+/** 원본 중앙에서 출력 비율만큼 잘라낼 영역. */
+export function coverCrop(width, height, aspect) {
+  const cropWidth = Math.min(width, height * aspect);
+  const cropHeight = Math.min(height, width / aspect);
+  return {
+    left: (width - cropWidth) / 2,
+    top: (height - cropHeight) / 2,
+    width: cropWidth,
+    height: cropHeight,
+  };
 }
 
 // moods: 이 프레임이 어울리는 감성 id (emotion.js MOODS 기준)
@@ -73,16 +85,11 @@ function hueName(h) {
 
 /**
  * 프레임 추천.
- * @param {{avgRgb:number[]|null, moodId:string|null, headcount:number}} input
- * @returns {Array<{themeId, layout, score, reasons:string[]}>}
+ * @param {{avgRgb:number[]|null, moodId:string|null}} input
+ * @returns {Array<{themeId, score, reasons:string[]}>}
  */
-export function recommendFrames({ avgRgb, moodId, headcount }) {
+export function recommendFrames({ avgRgb, moodId }) {
   const photo = avgRgb ? rgbToHsl(avgRgb) : null;
-  const layout = headcount >= 3 ? 'grid' : 'strip';
-  const layoutReason = headcount >= 3
-    ? `${headcount}명이 찍은 네 컷을 두 줄로 배치해요`
-    : headcount === 2 ? '둘이면 세로 네컷 한 칸에 딱 맞아요' : '혼자면 세로 네컷이 인물에 집중돼요';
-
   const results = THEMES.map((t) => {
     let score = 0;
     const reasons = [];
@@ -106,7 +113,7 @@ export function recommendFrames({ avgRgb, moodId, headcount }) {
       if (ps < 0.08 && fs < 0.12) { score += 1; reasons.push('흑백·저채도 사진엔 무채색 프레임'); }
     }
     if (!reasons.length) reasons.push('무난하게 어울리는 기본 프레임');
-    return { themeId: t.id, layout, score, reasons: [...reasons.slice(0, 2), layoutReason] };
+    return { themeId: t.id, score, reasons: reasons.slice(0, 2) };
   });
   return results.sort((a, b) => b.score - a.score);
 }
