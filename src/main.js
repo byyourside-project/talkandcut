@@ -1,7 +1,7 @@
 import { FilterRenderer } from './glfilter.js';
 import { NEUTRAL, PARAM_META, MOODS, applyMood, explain, nearestMood } from './emotion.js';
 import { parseUtterance } from './intent.js';
-import { POSES, recommendPlan, drawGuide, drawDebug, PoseDetector, matchPose } from './pose.js';
+import { POSES, recommendPlan, drawDebug, PoseDetector, matchPose, peopleInFrame, peopleInSlots } from './pose.js';
 import { LAYOUTS, THEMES, themeById, cellAspect, recommendFrames, composite, averageColor } from './frames.js';
 import { Voice } from './voice.js';
 
@@ -9,12 +9,15 @@ const $ = (id) => document.getElementById(id);
 const els = {
   welcome: $('welcome'), session: $('session'), startBtn: $('startBtn'), result: $('result'),
   resultTitle: $('resultTitle'), frameLabel: $('frameLabel'), menuBtn: $('menuBtn'), controls: $('controls'),
+  editPanel: $('editPanel'), shootPanel: $('shootPanel'), resultPanel: $('resultPanel'),
+  shootRetake: $('shootRetake'), resultRetake: $('resultRetake'), resultStatus: $('resultStatus'),
+  resultSaveBtn: $('resultSaveBtn'), resultHomeBtn: $('resultHomeBtn'), devices: $('devices'),
   closeMenuBtn: $('closeMenuBtn'), shootBtn: $('shootBtn'), cancelBtn: $('cancelBtn'), homeBtn: $('homeBtn'),
   retakeRow: $('retakeRow'), retakeCut: $('retakeCut'), retakeBtn: $('retakeBtn'),
   fullscreenBtn: $('fullscreenBtn'), deviceHint: $('deviceHint'), viewfinder: $('viewfinder'),
   stage: $('stage'), preview: $('preview'), overlay: $('overlay'), video: $('video'),
-  camMsg: $('camMsg'), camBtn: $('camBtn'), countdown: $('countdown'), flash: $('flash'),
-  poseChip: $('poseChip'), poseName: $('poseName'), poseTip: $('poseTip'), poseMatch: $('poseMatch'),
+  camMsg: $('camMsg'), camBtn: $('camBtn'), countdown: $('countdown'), shutter: $('shutter'),
+  poseChip: $('poseChip'), poseTip: $('poseTip'), positionHint: $('positionHint'), positions: $('positions'),
   cutNow: $('cutNow'), cutTrack: $('cutTrack'), voicebar: $('voicebar'), micBtn: $('micBtn'),
   voiceState: $('voiceState'), voicePrompt: $('voicePrompt'), reply: $('reply'), typedForm: $('typedForm'), typedInput: $('typedInput'),
   strip: $('strip'), saveBtn: $('saveBtn'), restartBtn: $('restartBtn'),
@@ -28,6 +31,7 @@ const els = {
 const state = {
   phase: 'home',
   cameraOn: false,
+  touchRetake: false,
   retake: null,
   cameraStatus: '',
   voiceStatus: '',
@@ -47,7 +51,6 @@ const state = {
   counting: false,
   armed: null,          // 포즈 일치 대기 중인 컷 index
   matchSince: 0,
-  people: null,
   lastDetect: 0,
   stableCount: { n: 0, frames: 0 },
 };
@@ -57,6 +60,7 @@ const offscreen = new FilterRenderer(document.createElement('canvas'));
 const detector = new PoseDetector();
 // ?debug=1 이면 랜드마크·판정 수치를 뷰파인더에 겹쳐 그린다 (실제 카메라에서 TH 튜닝용)
 const DEBUG = new URLSearchParams(location.search).has('debug');
+els.overlay.hidden = !DEBUG;
 
 // ---------- 공통 ----------
 
@@ -75,8 +79,12 @@ function isNeutral(p) {
 }
 
 function reply(text, speak = true) {
+  if (state.phase === 'result') {
+    els.resultStatus.textContent = text;
+    return;
+  }
   els.reply.textContent = text;
-  if (speak) voice.say(text);
+  if (speak && state.phase === 'shoot' && !state.touchRetake) voice.say(text);
 }
 
 let audioCtx;
@@ -115,16 +123,15 @@ function showCameraMessage(message) {
   els.camMsg.querySelector('p').textContent = message;
   els.camMsg.hidden = !message;
   els.viewfinder.hidden = !!message;
-  els.deviceHint.textContent = [message, state.voiceStatus].filter(Boolean).join(' ');
+  els.poseChip.hidden = !!message || !currentPose();
   updateControls();
 }
 
 function stopCamera() {
   cameraRequest = null;
   state.cameraOn = false;
-  state.people = null;
   state.stableCount = { n: 0, frames: 0 };
-  els.poseMatch.hidden = true;
+  showPositions();
   const stream = els.video.srcObject;
   els.video.srcObject = null;
   stream?.getTracks().forEach((track) => track.stop());
@@ -218,7 +225,16 @@ function setPhase(phase) {
   if (phase !== 'home') els.session.dataset.phase = phase;
   els.stage.hidden = phase !== 'shoot';
   els.result.hidden = phase !== 'result';
+  const editing = phase === 'result';
+  els.menuBtn.hidden = phase !== 'shoot';
+  (editing ? els.resultPanel : els.shootPanel).append(els.editPanel);
+  (editing ? els.resultRetake : els.shootRetake).append(els.retakeRow);
+  $('tab-pose').hidden = editing;
+  els.editPanel.querySelector('[role="tablist"]').setAttribute('aria-label', editing ? '사진 편집' : '촬영 설정');
+  els.compareToggle.checked = false;
+  if (editing) scheduleStrip();
   if (phase !== 'shoot') {
+    voice.stop();
     stopCamera();
     showCameraMessage('');
     leaveFullscreen();
@@ -229,16 +245,23 @@ function setPhase(phase) {
 
 function updateControls() {
   const shooting = state.phase === 'shoot';
-  const busy = state.counting || state.armed !== null;
+  const busy = state.counting || state.armed !== null || shutterTimer !== null;
   const retaking = state.retake !== null;
   els.shootBtn.hidden = !shooting;
-  els.shootBtn.disabled = !state.cameraOn || busy;
+  els.shootBtn.disabled = !state.cameraOn || busy || (!retaking && nextIndex() < 0);
   els.cancelBtn.hidden = !shooting;
   els.cancelBtn.disabled = !busy && !retaking;
   els.camBtn.hidden = !shooting;
+  els.micBtn.hidden = state.touchRetake;
+  els.typedForm.hidden = state.touchRetake;
+  $('tab-help').hidden = !shooting || state.touchRetake;
+  els.voicebar.hidden = !shooting || state.touchRetake || (shutterTimer !== null && state.shots.every(Boolean));
+  els.devices.querySelector('h3').textContent = state.touchRetake ? '카메라' : '카메라 · 마이크';
+  els.deviceHint.textContent = [state.cameraStatus, state.touchRetake ? '' : state.voiceStatus].filter(Boolean).join(' ');
   els.camBtn.disabled = state.cameraOn || !!cameraRequest;
   els.fullscreenBtn.hidden = !shooting || !els.session.requestFullscreen || !!document.fullscreenElement;
   els.saveBtn.disabled = !state.shots.some(Boolean);
+  els.resultSaveBtn.disabled = !state.shots.every(Boolean);
   els.retakeRow.hidden = !state.shots.some(Boolean) || busy || retaking || (shooting && !state.cameraOn);
   els.autoShutter.disabled = !shooting || !detector.ready;
 }
@@ -259,17 +282,19 @@ function startSession() {
 
 function goHome() {
   closeMenu();
-  voice.stop();
   resetSession();
   setPhase('home');
   els.startBtn.focus({ preventScroll: true });
 }
 
 function resetSession() {
-  clearTimeout(completionTimer);
-  completionTimer = null;
+  clearTimeout(shutterTimer);
+  shutterTimer = null;
+  els.shutter.classList.remove('on');
   cancelCountdown();
   state.retake = null;
+  state.touchRetake = false;
+  els.resultStatus.textContent = '';
   state.shots = [null, null, null, null];
   state.layout = 'strip';
   state.themeId = 'white';
@@ -288,110 +313,108 @@ function resetSession() {
   showTab('pose');
 }
 
-function captureArea(w, h, videoAspect) {
-  const viewport = w / h;
-  const layout = cellAspect(state.layout);
-  // 화면과 인화지의 공통 영역을 표시한다. 휴대폰 세로 화면에서도 프레임 위치가 일치한다.
-  const previewW = Math.min(1, viewport / videoAspect);
-  const previewH = Math.min(1, videoAspect / viewport);
-  const photoW = Math.min(1, layout / videoAspect);
-  const photoH = Math.min(1, videoAspect / layout);
-  return {
-    w: w * Math.min(1, photoW / previewW),
-    h: h * Math.min(1, photoH / previewH),
-  };
-}
-
+// 두 출력 모양에서 공통으로 보존되는 범위. 감지와 화면 안내에 같은 좌표를 쓴다.
+const layoutAspects = Object.keys(LAYOUTS).map(cellAspect);
+const minLayoutAspect = Math.min(...layoutAspects);
+const maxLayoutAspect = Math.max(...layoutAspects);
 let finderSize = '';
+
 function frame(now) {
   requestAnimationFrame(frame);
   const v = els.video;
-  if (!state.cameraOn || v.readyState < 2) return;
+  if (!state.cameraOn || v.readyState < 2 || shutterTimer !== null) return;
 
-  const dpr = Math.min(window.devicePixelRatio || 1, 1920 / els.stage.clientWidth, 1440 / els.stage.clientHeight);
-  const w = Math.round(els.stage.clientWidth * dpr);
-  const h = Math.round(els.stage.clientHeight * dpr);
-  if (!w || !h) return;
+  const { clientWidth, clientHeight } = els.stage;
+  if (!clientWidth || !clientHeight) return;
+  // 세로 화면에서는 사진 구도를 중앙에 표시해 양쪽 사람까지 볼 수 있게 한다.
+  const previewHeightCss = Math.min(clientHeight, clientWidth / minLayoutAspect);
+  const dpr = Math.min(window.devicePixelRatio || 1, 1920 / clientWidth, 1440 / previewHeightCss);
+  const w = Math.round(clientWidth * dpr);
+  const h = Math.round(previewHeightCss * dpr);
   live.setSize(w, h);
   live.render(v, v.videoWidth, v.videoHeight, els.compareToggle.checked ? NEUTRAL : state.params, { flip: true, seed: (now % 1000) / 100 });
 
-  // 포즈 인식(약 8fps)
-  if (detector.ready && now - state.lastDetect > 120) {
-    state.lastDetect = now;
-    try {
-      state.people = detector.detect(v, now);
-      onPeople(now);
-    } catch (e) { console.warn(e); }
-  }
-
-  // 가이드 오버레이
-  const ov = els.overlay;
-  if (ov.width !== w || ov.height !== h) { ov.width = w; ov.height = h; }
-  const ctx = ov.getContext('2d');
-  ctx.clearRect(0, 0, w, h);
-  const area = captureArea(w, h, v.videoWidth / v.videoHeight);
-  const finderW = Math.min(94, 100 * area.w / w);
-  const finderH = Math.min(94, 100 * area.h / h);
-  const size = `${finderW}:${finderH}`;
+  const videoAspect = v.videoWidth / v.videoHeight;
+  const viewport = w / h;
+  const previewWidth = Math.min(videoAspect, viewport);
+  const previewHeight = Math.min(1, videoAspect / viewport);
+  const area = {
+    width: Math.min(previewWidth, minLayoutAspect),
+    height: Math.min(previewHeight, videoAspect / maxLayoutAspect),
+  };
+  area.left = (videoAspect - area.width) / 2;
+  area.top = (1 - area.height) / 2;
+  const finderW = 100 * area.width / previewWidth;
+  const finderH = 100 * area.height / previewHeight * previewHeightCss / clientHeight;
+  const size = `${finderW}:${finderH}:${previewHeightCss}:${clientHeight}`;
   if (size !== finderSize) {
     finderSize = size;
+    els.stage.style.setProperty('--preview-height', `${previewHeightCss}px`);
+    els.stage.classList.toggle('wide-preview', previewHeightCss < clientHeight);
     els.viewfinder.style.setProperty('--finder-w', `${finderW}%`);
     els.viewfinder.style.setProperty('--finder-h', `${finderH}%`);
   }
-  const pose = currentPose();
-  if (pose) {
-    const m = detector.ready ? matchPose(pose, state.people, state.headcount) : null;
-    ctx.save();
-    ctx.translate((w - area.w) / 2, (h - area.h) / 2);
-    ctx.globalAlpha = m?.ok ? 0.85 : 0.48;
-    drawGuide(ctx, pose, state.headcount, area.w, area.h, m?.ok);
-    ctx.restore();
-    if (DEBUG && m) drawDebug(ctx, state.people, m, v.videoWidth, v.videoHeight, w, h);
-  }
+
+  if (!detector.ready || now - state.lastDetect <= 120) return;
+  state.lastDetect = now;
+  try {
+    const people = detector.detect(v, now) ?? [];
+    const match = onPeople(now, people, area);
+    if (DEBUG) {
+      const ov = els.overlay;
+      if (ov.width !== w || ov.height !== h) { ov.width = w; ov.height = h; }
+      const ctx = ov.getContext('2d');
+      ctx.clearRect(0, 0, w, h);
+      drawDebug(ctx, people, match, v.videoWidth, v.videoHeight, w, h);
+    }
+  } catch (e) { console.warn(e); }
 }
 
-function onPeople(now) {
-  const people = state.people ?? [];
-  // 인원 자동 감지: 같은 수가 약 1.5초 유지되면 반영
-  if (!state.headcountManual && people.length) {
-    if (people.length === state.stableCount.n) state.stableCount.frames++;
-    else state.stableCount = { n: people.length, frames: 0 };
-    if (state.stableCount.frames > 12 && people.length !== state.headcount) {
-      setHeadcount(people.length, false);
-      reply(`${people.length}명으로 보여서 포즈를 다시 골랐어요`, false);
-    }
+function showPositions(slots = null) {
+  const count = state.headcount;
+  const filled = slots?.filter(Boolean).length;
+  let hint = count === 1 ? '얼굴을 화면 가운데에 맞춰 주세요.' : `${count}명, 각 칸에 한 명씩 서 주세요.`;
+  if (filled === count) hint = count === 1 ? '구도가 좋아요.' : '모두 자기 자리에 들어왔어요.';
+  if (els.positionHint.textContent !== hint) els.positionHint.textContent = hint;
+  Array.from(els.positions.children).forEach((marker, i) => {
+    marker.classList.toggle('occupied', !!slots?.[i]);
+  });
+}
+
+function onPeople(now, people, area) {
+  const framed = peopleInFrame(people, area);
+  // 일정 시간 동안 인원이 유지될 때만 바꿔서 자리가 계속 움직이지 않게 한다.
+  if (!state.headcountManual && !state.counting && state.retake === null) {
+    const count = framed.length;
+    if (count === state.stableCount.n) state.stableCount.frames++;
+    else state.stableCount = { n: count, frames: 1 };
+    if (count && state.stableCount.frames > 12 && count !== state.headcount) setHeadcount(count, false);
   }
 
+  const slots = peopleInSlots(framed, state.headcount, area);
+  showPositions(slots);
   const pose = currentPose();
-  if (!pose) { els.poseMatch.hidden = true; return; }
-  const m = matchPose(pose, people, state.headcount);
-  els.poseMatch.hidden = false;
-  els.poseMatch.textContent = people.length < m.total
-    ? `${m.total}명이 모두 화면에 들어오게 서 주세요`
-    : m.ok ? '포즈 좋아요' : `포즈 맞춘 사람 ${m.matched}/${m.total}`;
-
+  if (!pose) return null;
+  const match = matchPose(pose, slots.filter(Boolean), state.headcount);
   const armed = state.armed !== null || (els.autoShutter.checked && state.retake === null);
-  if (!armed || state.counting) { state.matchSince = 0; return; }
-  if (m.ok) {
-    if (!state.matchSince) state.matchSince = now;
-    else if (now - state.matchSince > 600) {
-      const idx = state.armed ?? nextIndex();
-      state.armed = null;
-      state.matchSince = 0;
-      startCountdown(1, idx);
-    }
-  } else {
+  if (!armed || state.counting || !match.ok) {
     state.matchSince = 0;
+  } else if (!state.matchSince) {
+    state.matchSince = now;
+  } else if (now - state.matchSince > 600) {
+    startCountdown(1, state.armed ?? nextIndex());
   }
+  return match;
 }
 
 // ---------- 촬영 ----------
 
 function requestCapture({ delay = 3, when } = {}) {
+  if (shutterTimer !== null) return '사진을 찍는 중이에요';
   const idx = state.retake ?? nextIndex();
-  if (idx < 0) return '네 컷을 다 찍었어요. “두 번째 컷 다시 찍어”처럼 말해 보세요';
-  if (!state.cameraOn) return '카메라가 연결되면 다시 말해 주세요';
-  if (state.counting) return '이미 촬영 중이에요. 멈추려면 “촬영 취소”라고 말해 주세요';
+  if (idx < 0) return '네 컷을 다 찍었어요';
+  if (!state.cameraOn) return '카메라 연결을 확인해 주세요';
+  if (state.counting) return '이미 촬영 중이에요';
   if (when === 'POSE_MATCH') {
     if (!detector.ready) {
       startCountdown(delay, idx);
@@ -451,42 +474,38 @@ function shoot(idx) {
   c.height = v.videoHeight;
   c.getContext('2d').drawImage(v, 0, 0);
   state.shots[idx] = c;
+  closeMenu();
   const replaced = state.retake !== null;
+  const next = nextIndex();
   state.retake = null;
-  els.flash.classList.remove('on');
-  void els.flash.offsetWidth;
-  els.flash.classList.add('on');
+  live.render(c, c.width, c.height, els.compareToggle.checked ? NEUTRAL : state.params, { flip: true });
+  els.shutter.classList.add('on');
   beep(1400, 0.12, 0.12);
 
-  updateCutUI();
-  scheduleStrip();
-  const next = nextIndex();
-  if (next < 0) {
-    onAllShot(replaced);
-  } else {
-    const p = currentPose(next);
-    reply(`좋아요. ${next + 1}번째는 ${p.name}`);
-  }
+  if (next < 0) voice.stop();
+  shutterTimer = setTimeout(() => {
+    shutterTimer = null;
+    els.shutter.classList.remove('on');
+    updateCutUI();
+    scheduleStrip();
+    if (next < 0) {
+      recommendNow(!replaced);
+      showResult(replaced ? '다시 찍은 컷으로 바꿨어요.' : '');
+    } else {
+      reply(`좋아요. ${next + 1}번째 컷을 준비해 주세요.`);
+    }
+  }, 520);
+  updateControls();
 }
 
-function onAllShot(replaced) {
-  recommendNow(!replaced);
-  showTab('frame');
-  // 마지막 컷에도 플래시가 보이도록 한 프레임 이상 표시한다.
-  completionTimer = setTimeout(() => {
-    completionTimer = null;
-    showResult();
-    reply(replaced
-      ? '새 컷으로 바꿨어요. “저장해줘”라고 말해 보세요'
-      : '네 컷이 완성됐어요. “다른 프레임”이나 “저장해줘”라고 말해 보세요');
-  }, 340);
-}
+let shutterTimer = null;
 
-let completionTimer = null;
-
-function showResult() {
+function showResult(message = '') {
   closeMenu();
+  state.touchRetake = false;
   setPhase('result');
+  showTab('frame');
+  reply(message, false);
   els.resultTitle.focus({ preventScroll: true });
   window.scrollTo(0, 0);
 }
@@ -499,13 +518,13 @@ function cancelCapture() {
     state.retake = null;
     updateCutUI();
     if (nextIndex() < 0) showResult();
-    return '다시 찍기를 취소했어요. 원래 사진은 그대로예요';
+    return '원래 컷으로 돌아왔어요.';
   }
   return '촬영을 멈췄어요';
 }
 
 function retake(index, delay, fullscreen = false) {
-  if (state.counting || completionTimer !== null) return '지금 촬영이 끝난 뒤 다시 말해 주세요';
+  if (state.counting || shutterTimer !== null) return '이번 촬영이 끝난 뒤 다시 시도해 주세요';
   const idx = index ?? state.shots.findLastIndex(Boolean);
   if (idx < 0 || !state.shots[idx]) {
     return index == null ? requestCapture({ delay }) : '아직 찍지 않은 컷이에요';
@@ -514,8 +533,10 @@ function retake(index, delay, fullscreen = false) {
   state.retake = idx;
   const fromResult = state.phase === 'result';
   if (fromResult) {
+    state.touchRetake = true;
     closeMenu();
     setPhase('shoot');
+    showTab('pose');
     els.menuBtn.focus({ preventScroll: true });
     if (fullscreen) enterFullscreen();
   }
@@ -530,11 +551,13 @@ function retake(index, delay, fullscreen = false) {
 }
 
 function restart(fullscreen = false) {
+  const wasTouchRetake = state.touchRetake;
   closeMenu();
   resetSession();
   setPhase('shoot');
   els.menuBtn.focus({ preventScroll: true });
   startCamera();
+  if (wasTouchRetake) voice.start();
   if (fullscreen) enterFullscreen();
 }
 
@@ -549,6 +572,13 @@ function replan() {
 function setHeadcount(n, manual = true) {
   state.headcount = Math.max(1, Math.min(4, n));
   if (manual) state.headcountManual = true;
+  els.positions.style.setProperty('--positions', state.headcount);
+  els.positions.replaceChildren(...Array.from({ length: state.headcount }, () => {
+    const slot = document.createElement('span');
+    slot.className = 'position-slot';
+    return slot;
+  }));
+  showPositions();
   for (const b of els.headcount.querySelectorAll('button')) {
     b.setAttribute('aria-checked', String(Number(b.dataset.n) === state.headcount));
   }
@@ -572,11 +602,8 @@ function renderPlan() {
     els.plan.append(li);
   });
   const p = currentPose();
-  els.poseChip.hidden = !p;
-  if (p) {
-    els.poseName.textContent = p.name;
-    els.poseTip.textContent = p.tip;
-  }
+  els.poseChip.hidden = !p || !!state.cameraStatus;
+  if (p) els.poseTip.textContent = p.tip;
 }
 
 function updateCutUI() {
@@ -644,7 +671,6 @@ function applyFilter(result) {
   state.moodId = result.mode === 'set' ? (result.moodIds[0] ?? nearestMood(state.params)) : (state.moodId ?? nearestMood(state.params));
   const msg = explain(result, before, state.params);
   els.explain.textContent = msg;
-  els.explain.classList.add('fresh');
   syncFilterUI();
   if (state.moodId !== prevMood) {
     // 분위기가 바뀌면 아직 안 찍은 컷의 포즈를 분위기에 맞게 다시 고른다
@@ -721,7 +747,7 @@ function renderRecs() {
     b.querySelector('b').textContent = `${t.name} · ${LAYOUTS[r.layout].name}`;
     b.querySelector('small').textContent = r.reasons.join('. ');
     b.setAttribute('aria-pressed', String(state.themeId === r.themeId && state.layout === r.layout));
-    b.addEventListener('click', () => { applyRec(i); renderRecs(); });
+    b.addEventListener('click', () => applyRec(i));
     li.append(b);
     els.recs.append(li);
   });
@@ -745,7 +771,7 @@ function scheduleStrip() {
     stripQueued = false;
     composite(els.strip, {
       layout: state.layout, themeId: state.themeId, shots: state.shots,
-      params: state.params, caption: state.caption, renderer: offscreen,
+      params: els.compareToggle.checked ? NEUTRAL : state.params, caption: state.caption, renderer: offscreen,
     });
   });
 }
@@ -769,13 +795,14 @@ function save() {
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   }, 'image/png');
+  if (els.compareToggle.checked) scheduleStrip();
   return state.shots.every(Boolean) ? '사진을 저장했어요' : '찍은 컷까지만 저장했어요';
 }
 
 // ---------- 명령 실행 ----------
 
 function handleUtterance(text) {
-  if (state.phase === 'home') return;
+  if (state.phase !== 'shoot' || state.touchRetake || shutterTimer !== null) return;
   let actions = parseUtterance(text, { hasFilter: !isNeutral(state.params) });
   if (actions.some((a) => a.action === 'START')) {
     actions = actions.filter((a) => a.action !== 'CAPTURE' && a.action !== 'RETAKE');
@@ -886,7 +913,7 @@ const voiceMessages = {
 function updateVoicePrompt() {
   els.voicePrompt.textContent = state.voiceStatus
     ? '오른쪽 메뉴에서 터치로 조작할 수 있어요'
-    : state.phase === 'result' ? '“저장해줘”라고 말해 보세요' : '“찍어줘”라고 말해 보세요';
+    : '“찍어줘”라고 말해 보세요';
 }
 
 const voice = new Voice({
@@ -897,7 +924,7 @@ const voice = new Voice({
     els.voiceState.textContent = voiceLabels[s];
     state.voiceStatus = voiceMessages[s] ?? '';
     updateVoicePrompt();
-    els.deviceHint.textContent = [state.cameraStatus, state.voiceStatus].filter(Boolean).join(' ');
+    updateControls();
     if (state.voiceStatus) els.reply.textContent = state.voiceStatus;
     else if (wasError) els.reply.textContent = '';
     els.micBtn.textContent = s === 'listening' || s === 'speaking' || s === 'connecting'
@@ -938,28 +965,36 @@ els.shootBtn.addEventListener('click', () => { closeMenu(); reply(requestCapture
 els.cancelBtn.addEventListener('click', () => { closeMenu(); reply(cancelCapture(), false); });
 els.retakeBtn.addEventListener('click', () => { closeMenu(); reply(retake(Number(els.retakeCut.value), 3, true), false); });
 els.saveBtn.addEventListener('click', () => { closeMenu(); reply(save(), false); });
+els.resultSaveBtn.addEventListener('click', () => reply(save(), false));
+els.resultHomeBtn.addEventListener('click', goHome);
+els.compareToggle.addEventListener('change', scheduleStrip);
 els.restartBtn.addEventListener('click', () => { restart(true); reply('처음부터 다시 찍어요', false); });
 els.homeBtn.addEventListener('click', goHome);
 els.poseNextBtn.addEventListener('click', () => reply(execute({ action: 'POSE_NEXT' }), false));
-els.resetFilterBtn.addEventListener('click', resetFilter);
+els.resetFilterBtn.addEventListener('click', () => {
+  resetFilter();
+  recommendNow(false);
+});
 els.ttsToggle.addEventListener('change', () => voice.setTtsEnabled(els.ttsToggle.checked));
 for (const b of els.headcount.querySelectorAll('button')) {
   b.addEventListener('click', () => setHeadcount(Number(b.dataset.n)));
 }
-tabs.forEach((t, i) => {
+tabs.forEach((t) => {
   const tab = $(`tab-${t}`);
   tab.addEventListener('click', () => showTab(t));
   tab.addEventListener('keydown', (event) => {
+    const available = tabs.filter((name) => !$(`tab-${name}`).hidden);
+    const i = available.indexOf(t);
     const next = {
-      ArrowLeft: (i + tabs.length - 1) % tabs.length,
-      ArrowRight: (i + 1) % tabs.length,
+      ArrowLeft: (i + available.length - 1) % available.length,
+      ArrowRight: (i + 1) % available.length,
       Home: 0,
-      End: tabs.length - 1,
+      End: available.length - 1,
     }[event.key];
     if (next === undefined) return;
     event.preventDefault();
-    showTab(tabs[next]);
-    $(`tab-${tabs[next]}`).focus();
+    showTab(available[next]);
+    $(`tab-${available[next]}`).focus();
   });
 });
 window.addEventListener('pagehide', () => {

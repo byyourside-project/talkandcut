@@ -55,11 +55,14 @@
 
   <main class="session" id="session" data-phase="shoot" hidden>
     <section class="stage" id="stage" aria-label="촬영 화면">
-      <video id="video" playsinline muted hidden></video>
+      <video id="video" playsinline muted aria-hidden="true"></video>
       <canvas id="preview" aria-label="카메라 미리보기"></canvas>
       <div class="camera-shade" aria-hidden="true"></div>
-      <div class="viewfinder" id="viewfinder" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
-      <canvas id="overlay" aria-hidden="true"></canvas>
+      <div class="viewfinder" id="viewfinder" aria-hidden="true">
+        <i></i><i></i><i></i><i></i>
+        <div class="positions" id="positions"></div>
+      </div>
+      <canvas id="overlay" aria-hidden="true" hidden></canvas>
 
       <header class="shoot-top">
         <div class="shoot-brand"><span class="brand-icon"><svg class="icon" aria-hidden="true"><use href="#icon-camera"/></svg></span> Talk &amp; Cut</div>
@@ -72,28 +75,40 @@
       </header>
 
       <div class="pose-chip" id="poseChip" hidden>
-        <span class="pose-label">POSE TIP</span>
-        <strong id="poseName"></strong>
-        <p id="poseTip"></p>
-        <em id="poseMatch" hidden></em>
+        <p class="position-hint" id="positionHint"></p>
+        <p class="pose-tip" id="poseTip"></p>
       </div>
       <div class="cam-msg" id="camMsg" role="status"><p>카메라를 여는 중이에요</p></div>
       <div class="countdown" id="countdown" aria-live="assertive"></div>
-      <div class="flash" id="flash" aria-hidden="true"></div>
+      <div class="shutter" id="shutter" aria-hidden="true">
+        <div class="shutter-flash"></div>
+        <span class="shutter-label"><svg class="icon"><use href="#icon-camera"/></svg> 찰칵!</span>
+      </div>
     </section>
 
     <section class="result" id="result" aria-labelledby="resultTitle" hidden>
-      <div class="result-copy">
+      <header class="result-top">
         <div class="wordmark"><span class="brand-icon"><svg class="icon" aria-hidden="true"><use href="#icon-camera"/></svg></span> Talk &amp; Cut</div>
-        <p class="eyebrow"><span></span> SESSION COMPLETE · 04/04</p>
+        <button class="btn" id="resultHomeBtn" type="button">홈으로</button>
+      </header>
+      <div class="result-heading">
         <h1 id="resultTitle" tabindex="-1">우리의 네컷<span>.</span></h1>
-        <p class="intro">프레임을 바꾸거나, 지금 모습 그대로 저장해 보세요.</p>
-        <p class="frame-label" id="frameLabel"></p>
+        <p class="intro">프레임과 필터를 골라 사진을 저장해 보세요.</p>
       </div>
-      <figure class="strip-holder">
-        <canvas id="strip" aria-label="완성된 네컷 사진 미리보기"></canvas>
-        <figcaption>FOUR CUTS, ONE MEMORY.</figcaption>
-      </figure>
+      <div class="result-grid">
+        <figure class="strip-holder">
+          <canvas id="strip" aria-label="완성된 네컷 사진 미리보기"></canvas>
+          <figcaption id="frameLabel"></figcaption>
+        </figure>
+        <div class="result-edit">
+          <div id="resultPanel"></div>
+          <div class="result-actions">
+            <button class="btn primary" id="resultSaveBtn" type="button">사진 저장</button>
+            <div id="resultRetake"></div>
+            <p class="device-hint" id="resultStatus" role="status"></p>
+          </div>
+        </div>
+      </div>
     </section>
 
     <div class="voicebar" id="voicebar" data-state="off">
@@ -122,13 +137,15 @@
             <button class="btn" id="cancelBtn" type="button" disabled>촬영 취소</button>
             <button class="btn primary" id="saveBtn" type="button" disabled>사진 저장</button>
           </div>
-          <div class="retake-row" id="retakeRow" hidden>
-            <label for="retakeCut">다시 찍을 컷</label>
-            <select id="retakeCut"></select>
-            <button class="btn" id="retakeBtn" type="button">다시 찍기</button>
+          <div id="shootRetake">
+            <div class="retake-row" id="retakeRow" hidden>
+              <label for="retakeCut">다시 찍을 컷</label>
+              <select id="retakeCut"></select>
+              <button class="btn" id="retakeBtn" type="button">다시 찍기</button>
+            </div>
           </div>
         </section>
-        <section class="quick devices" aria-labelledby="devicesTitle">
+        <section class="quick devices" id="devices" aria-labelledby="devicesTitle">
           <h3 id="devicesTitle">카메라 · 마이크</h3>
           <div class="quick-actions">
             <button class="btn" id="camBtn" type="button">카메라 다시 연결</button>
@@ -143,76 +160,78 @@
           </form>
         </section>
 
-      <section class="panel">
-          <div class="tabs" role="tablist" aria-label="촬영 설정">
-            <button role="tab" id="tab-pose" aria-controls="pane-pose" aria-selected="true">포즈</button>
-            <button role="tab" id="tab-filter" aria-controls="pane-filter" aria-selected="false">보정</button>
-            <button role="tab" id="tab-frame" aria-controls="pane-frame" aria-selected="false">프레임</button>
-            <button role="tab" id="tab-help" aria-controls="pane-help" aria-selected="false">말하는 법</button>
-          </div>
+        <div id="shootPanel">
+          <section class="panel" id="editPanel">
+            <div class="tabs" role="tablist" aria-label="촬영 설정">
+              <button role="tab" id="tab-pose" aria-controls="pane-pose" aria-selected="true">포즈</button>
+              <button role="tab" id="tab-filter" aria-controls="pane-filter" aria-selected="false">필터</button>
+              <button role="tab" id="tab-frame" aria-controls="pane-frame" aria-selected="false">프레임</button>
+              <button role="tab" id="tab-help" aria-controls="pane-help" aria-selected="false">말하는 법</button>
+            </div>
 
-          <div class="pane" id="pane-pose" role="tabpanel" aria-labelledby="tab-pose">
-            <div class="row">
-              <span class="field-name">인원</span>
-              <div class="seg" id="headcount" role="radiogroup" aria-label="인원">
-                <button role="radio" data-n="1">1명</button>
-                <button role="radio" data-n="2">2명</button>
-                <button role="radio" data-n="3">3명</button>
-                <button role="radio" data-n="4">4명</button>
+            <div class="pane" id="pane-pose" role="tabpanel" aria-labelledby="tab-pose">
+              <div class="row">
+                <span class="field-name">인원</span>
+                <div class="seg" id="headcount" role="radiogroup" aria-label="인원">
+                  <button role="radio" data-n="1">1명</button>
+                  <button role="radio" data-n="2">2명</button>
+                  <button role="radio" data-n="3">3명</button>
+                  <button role="radio" data-n="4">4명</button>
+                </div>
+                <span class="hint" id="detectState">포즈 인식 준비 중</span>
               </div>
-              <span class="hint" id="detectState">포즈 인식 준비 중</span>
-            </div>
-            <ol class="plan" id="plan"></ol>
-            <div class="row">
-              <button class="btn" id="poseNextBtn" type="button">다른 포즈</button>
-              <label class="check"><input type="checkbox" id="autoShutter"> 포즈를 맞추면 자동으로 찍기</label>
-            </div>
-          </div>
-
-          <div class="pane" id="pane-filter" role="tabpanel" aria-labelledby="tab-filter" hidden>
-            <div class="moods" id="moods"></div>
-            <p class="explain" id="explain">느낌을 말하면 채도·밝기·색온도를 알아서 맞춰요. 슬라이더로 직접 다듬어도 돼요.</p>
-            <div class="sliders" id="sliders"></div>
-            <div class="row">
-              <button class="btn" id="resetFilterBtn" type="button">보정 초기화</button>
-              <label class="check"><input type="checkbox" id="compareToggle"> 원본과 비교</label>
-            </div>
-          </div>
-
-          <div class="pane" id="pane-frame" role="tabpanel" aria-labelledby="tab-frame" hidden>
-            <h2 class="pane-title">추천 프레임</h2>
-            <ul class="recs" id="recs"></ul>
-            <h2 class="pane-title">모든 프레임</h2>
-            <div class="themes" id="themes"></div>
-            <div class="row">
-              <span class="field-name">모양</span>
-              <div class="seg" id="layoutSeg" role="radiogroup" aria-label="프레임 모양">
-                <button role="radio" data-layout="strip">세로 네컷</button>
-                <button role="radio" data-layout="grid">2×2</button>
+              <ol class="plan" id="plan"></ol>
+              <div class="row">
+                <button class="btn" id="poseNextBtn" type="button">다른 포즈</button>
+                <label class="check"><input type="checkbox" id="autoShutter"> 포즈를 맞추면 자동으로 찍기</label>
               </div>
             </div>
-            <div class="row">
-              <label class="field-name" for="captionInput">문구</label>
-              <input id="captionInput" type="text" maxlength="24" placeholder="예: 우리 졸업 축하해">
-            </div>
-          </div>
 
-          <div class="pane" id="pane-help" role="tabpanel" aria-labelledby="tab-help" hidden>
-            <dl class="phrases">
-              <dt>찍기</dt><dd>“찍어줘” “5초 뒤에 찍어” “바로 찍어” “포즈 맞추면 찍어줘” “촬영 취소”</dd>
-              <dt>다시 찍기</dt><dd>“두 번째 컷 다시 찍어” “다시 찍을래”</dd>
-              <dt>보정</dt><dd>“몽환적인 느낌으로” “90년대 필름처럼” “조금 더 따뜻하게” “아까보다 덜 어둡게” “원본으로”</dd>
-              <dt>포즈</dt><dd>“우리 세 명이야” “포즈 추천해줘” “다른 포즈”</dd>
-              <dt>프레임</dt><dd>“프레임 추천해줘” “다른 프레임” “2×2로 바꿔” “문구는 우리 졸업 축하해로 해줘”</dd>
-              <dt>마무리</dt><dd>“저장해줘” “처음부터 다시 시작” “홈으로”</dd>
-            </dl>
-            <details class="debug">
-              <summary>마지막 명령 해석 결과(JSON)</summary>
-              <pre id="lastJson">아직 없음</pre>
-            </details>
-            <label class="check"><input type="checkbox" id="ttsToggle" checked> 음성 안내 켜기</label>
-          </div>
-        </section>
+            <div class="pane" id="pane-filter" role="tabpanel" aria-labelledby="tab-filter" hidden>
+              <div class="moods" id="moods"></div>
+              <p class="explain" id="explain">필터를 고르고 슬라이더로 밝기와 색감을 다듬을 수 있어요.</p>
+              <div class="sliders" id="sliders"></div>
+              <div class="row">
+                <button class="btn" id="resetFilterBtn" type="button">보정 초기화</button>
+                <label class="check"><input type="checkbox" id="compareToggle"> 원본 보기</label>
+              </div>
+            </div>
+
+            <div class="pane" id="pane-frame" role="tabpanel" aria-labelledby="tab-frame" hidden>
+              <h2 class="pane-title">추천 프레임</h2>
+              <ul class="recs" id="recs"></ul>
+              <h2 class="pane-title">모든 프레임</h2>
+              <div class="themes" id="themes"></div>
+              <div class="row">
+                <span class="field-name">모양</span>
+                <div class="seg" id="layoutSeg" role="radiogroup" aria-label="프레임 모양">
+                  <button role="radio" data-layout="strip">세로 네컷</button>
+                  <button role="radio" data-layout="grid">2×2</button>
+                </div>
+              </div>
+              <div class="row">
+                <label class="field-name" for="captionInput">문구</label>
+                <input id="captionInput" type="text" maxlength="24" placeholder="예: 우리 졸업 축하해">
+              </div>
+            </div>
+
+            <div class="pane" id="pane-help" role="tabpanel" aria-labelledby="tab-help" hidden>
+              <dl class="phrases">
+                <dt>찍기</dt><dd>“찍어줘” “5초 뒤에 찍어” “바로 찍어” “포즈 맞추면 찍어줘” “촬영 취소”</dd>
+                <dt>다시 찍기</dt><dd>“두 번째 컷 다시 찍어” “다시 찍을래”</dd>
+                <dt>보정</dt><dd>“몽환적인 느낌으로” “90년대 필름처럼” “조금 더 따뜻하게” “아까보다 덜 어둡게” “원본으로”</dd>
+                <dt>포즈</dt><dd>“우리 세 명이야” “포즈 추천해줘” “다른 포즈”</dd>
+                <dt>프레임</dt><dd>“프레임 추천해줘” “다른 프레임” “2×2로 바꿔” “문구는 우리 졸업 축하해로 해줘”</dd>
+                <dt>이동</dt><dd>“처음부터 다시 시작” “홈으로”</dd>
+              </dl>
+              <details class="debug">
+                <summary>마지막 명령 해석 결과(JSON)</summary>
+                <pre id="lastJson">아직 없음</pre>
+              </details>
+              <label class="check"><input type="checkbox" id="ttsToggle" checked> 음성 안내 켜기</label>
+            </div>
+          </section>
+        </div>
 
         <div class="menu-footer">
           <button class="btn" id="restartBtn" type="button">처음부터 다시 찍기</button>

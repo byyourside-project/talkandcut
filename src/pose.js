@@ -1,43 +1,22 @@
 // 포즈 추천 + (선택) MediaPipe 포즈 인식으로 인원수 감지·포즈 일치 판정.
 
-// 팔 모양별 관절 좌표(사람 중심 기준, 화면에 보이는 대로 왼쪽이 -x). 상반신 위주(부스 구도).
-// [왼팔 팔꿈치, 왼손목, 오른팔 팔꿈치, 오른손목]
-const ARMS = {
-  down: [[-0.24, -0.12], [-0.26, 0.1], [0.24, -0.12], [0.26, 0.1]],
-  v: [[-0.24, -0.12], [-0.26, 0.1], [0.27, -0.27], [0.13, -0.56]],
-  heartTop: [[-0.3, -0.66], [-0.03, -0.86], [0.3, -0.66], [0.03, -0.86]],
-  cheek: [[-0.22, -0.2], [-0.1, -0.5], [0.22, -0.2], [0.1, -0.5]],
-  chin: [[-0.12, -0.14], [-0.03, -0.42], [0.12, -0.14], [0.03, -0.42]],
-  wave: [[-0.24, -0.12], [-0.26, 0.1], [0.33, -0.5], [0.36, -0.82]],
-  point: [[-0.24, -0.12], [-0.26, 0.1], [0.16, -0.2], [0.04, -0.28]],
-  cross: [[-0.21, -0.14], [0.12, -0.2], [0.21, -0.14], [-0.12, -0.2]],
-  fist: [[-0.31, -0.24], [-0.22, -0.54], [0.31, -0.24], [0.22, -0.54]],
-  hips: [[-0.33, -0.08], [-0.15, 0.12], [0.33, -0.08], [0.15, 0.12]],
-  surprise: [[-0.2, -0.2], [-0.05, -0.45], [0.2, -0.2], [0.05, -0.45]],
-  think: [[-0.2, -0.14], [0.08, -0.2], [0.12, -0.14], [0.03, -0.42]],
-  halfHeartL: [[-0.24, -0.12], [-0.26, 0.1], [0.06, -0.86], [0.32, -0.72]],
-  halfHeartR: [[-0.06, -0.86], [-0.32, -0.72], [0.24, -0.12], [0.26, 0.1]],
-  shoulderL: [[-0.24, -0.12], [-0.26, 0.1], [0.32, -0.3], [0.52, -0.36]],
-  shoulderR: [[-0.32, -0.3], [-0.52, -0.36], [0.24, -0.12], [0.26, 0.1]],
-};
-
 // roles: 네 컷의 흐름 — opener(자연스럽게) → cute → fun → finale(함께)
 export const POSES = [
-  { id: 'smile', name: '자연스러운 미소', tip: '어깨 힘 빼고 카메라 렌즈를 보면서 웃어요', each: 'down', min: 1, max: 4, moods: ['calm', 'warm', 'bright', 'fresh'], roles: ['opener'] },
-  { id: 'wave', name: '손 흔들기', tip: '한 손을 높이 들고 인사하듯 흔들어요', each: 'wave', min: 1, max: 4, moods: ['happy', 'fresh', 'bright'], roles: ['opener'] },
-  { id: 'v', name: '얼굴 옆 브이', tip: '눈 옆에 브이를 대고 고개를 살짝 기울여요', each: 'v', min: 1, max: 4, moods: ['happy', 'bright', 'romantic', 'vivid'], roles: ['cute', 'opener'] },
-  { id: 'cheek', name: '양 볼 꽃받침', tip: '두 손바닥으로 턱을 받쳐 꽃 모양을 만들어요', each: 'cheek', min: 1, max: 4, moods: ['romantic', 'happy', 'bright', 'dreamy'], roles: ['cute'] },
+  { id: 'smile', name: '자연스러운 미소', tip: '어깨 힘을 빼고 편하게 웃어 보세요.', each: 'down', min: 1, max: 4, moods: ['calm', 'warm', 'bright', 'fresh'], roles: ['opener'] },
+  { id: 'wave', name: '손 흔들기', tip: '친구를 만난 것처럼 가볍게 손을 흔들어 보세요.', each: 'wave', min: 1, max: 4, moods: ['happy', 'fresh', 'bright'], roles: ['opener'] },
+  { id: 'v', name: '얼굴 옆 브이', tip: '볼 옆에 브이를 하고 고개를 살짝 기울여 보세요.', each: 'v', min: 1, max: 4, moods: ['happy', 'bright', 'romantic', 'vivid'], roles: ['cute', 'opener'] },
+  { id: 'cheek', name: '양 볼 꽃받침', tip: '두 손을 볼 옆에 대고 살짝 웃어 보세요.', each: 'cheek', min: 1, max: 4, moods: ['romantic', 'happy', 'bright', 'dreamy'], roles: ['cute'] },
   { id: 'chin', name: '턱 괴기', tip: '주먹을 턱 아래에 대고 눈을 살짝 내려 봐요', each: 'chin', min: 1, max: 3, moods: ['chic', 'calm', 'dreamy', 'moody', 'gloomy'], roles: ['cute', 'opener'] },
-  { id: 'surprise', name: '깜짝 놀라기', tip: '두 손으로 입을 가리고 눈을 크게 떠요', each: 'surprise', min: 1, max: 4, moods: ['happy', 'vivid', 'retro'], roles: ['fun'] },
+  { id: 'surprise', name: '깜짝 놀라기', tip: '깜짝 놀란 척, 두 손을 입가에 모아 보세요.', each: 'surprise', min: 1, max: 4, moods: ['happy', 'vivid', 'retro'], roles: ['fun'] },
   { id: 'fist', name: '파이팅', tip: '두 주먹을 얼굴 옆까지 올리고 힘차게', each: 'fist', min: 1, max: 4, moods: ['happy', 'vivid', 'fresh'], roles: ['fun'] },
   { id: 'point', name: '카메라 가리키기', tip: '렌즈를 손가락으로 콕 찌르듯 가리켜요', each: 'point', min: 1, max: 4, moods: ['happy', 'vivid', 'chic'], roles: ['fun'] },
   { id: 'cross', name: '팔짱 시크', tip: '팔짱을 끼고 무표정으로 렌즈를 봐요', each: 'cross', min: 1, max: 4, moods: ['chic', 'cool', 'mono', 'moody'], roles: ['opener', 'fun'] },
   { id: 'hips', name: '허리에 손', tip: '양손을 허리에 올리고 팔꿈치를 바깥으로', each: 'hips', min: 1, max: 3, moods: ['chic', 'vivid', 'retro'], roles: ['fun', 'opener'] },
   { id: 'think', name: '생각하는 사람', tip: '한 손은 턱, 한 손은 팔짱. 고개를 갸웃', each: 'think', min: 1, max: 3, moods: ['calm', 'gloomy', 'moody', 'retro', 'mono'], roles: ['fun'] },
-  { id: 'heartTop', name: '머리 위 큰 하트', tip: '두 팔을 머리 위로 올려 하트를 만들어요', each: 'heartTop', min: 1, max: 4, moods: ['romantic', 'happy', 'warm', 'bright'], roles: ['finale'] },
+  { id: 'heartTop', name: '머리 위 큰 하트', tip: '머리 위에 각자 하트를 만들어 보세요.', each: 'heartTop', min: 1, max: 4, moods: ['romantic', 'happy', 'warm', 'bright'], roles: ['finale'] },
   { id: 'halfHeart', name: '반쪽 하트 합체', tip: '둘이 팔을 하나씩 올려 큰 하트 하나를 완성해요', people: { 2: ['halfHeartL', 'halfHeartR'] }, min: 2, max: 2, moods: ['romantic', 'warm', 'dreamy'], roles: ['finale'] },
-  { id: 'shoulder', name: '어깨동무', tip: '옆 사람 어깨에 팔을 올리고 몸을 붙여요', people: { 2: ['shoulderL', 'shoulderR'], 3: ['shoulderL', 'down', 'shoulderR'], 4: ['shoulderL', 'shoulderL', 'shoulderR', 'shoulderR'] }, min: 2, max: 4, moods: ['warm', 'happy', 'calm', 'retro', 'gloomy'], roles: ['finale'] },
-  { id: 'stairs', name: '계단 높이', tip: '키 순서대로 높이를 다르게, 얼굴이 계단처럼', people: { 3: ['v', 'chin', 'cheek'], 4: ['v', 'chin', 'cheek', 'fist'] }, stagger: true, min: 3, max: 4, moods: ['happy', 'vivid', 'retro'], roles: ['fun', 'finale'] },
+  { id: 'shoulder', name: '어깨동무', tip: '얼굴은 각자 자리에 두고 옆 사람 어깨에 팔을 올려 보세요.', people: { 2: ['shoulderL', 'shoulderR'], 3: ['shoulderL', 'down', 'shoulderR'], 4: ['shoulderL', 'shoulderL', 'shoulderR', 'shoulderR'] }, min: 2, max: 4, moods: ['warm', 'happy', 'calm', 'retro', 'gloomy'], roles: ['finale'] },
+  { id: 'stairs', name: '계단 높이', tip: '각자 자리에서 고개 높이를 조금씩 다르게 해 보세요.', people: { 3: ['v', 'chin', 'cheek'], 4: ['v', 'chin', 'cheek', 'fist'] }, min: 3, max: 4, moods: ['happy', 'vivid', 'retro'], roles: ['fun', 'finale'] },
 ];
 
 const ROLE_ORDER = ['opener', 'cute', 'fun', 'finale'];
@@ -75,47 +54,26 @@ export function armsFor(pose, n) {
   return Array.from({ length: n }, () => pose.each ?? 'down');
 }
 
-/** 뷰파인더 위에 반투명 가이드 실루엣을 그린다 */
-export function drawGuide(ctx, pose, n, w, h, ok) {
-  const arms = armsFor(pose, n);
-  const span = w / (n + 0.4);
-  const scale = Math.min(h * 0.42, span * 1.1);
-  ctx.save();
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-  ctx.strokeStyle = ok ? 'rgba(110, 231, 200, 0.95)' : 'rgba(255, 255, 255, 0.75)';
-  ctx.fillStyle = ok ? 'rgba(110, 231, 200, 0.18)' : 'rgba(255, 255, 255, 0.12)';
-  ctx.lineWidth = Math.max(3, scale * 0.045);
-  ctx.setLineDash(ok ? [] : [scale * 0.06, scale * 0.05]);
-  arms.forEach((armKey, i) => {
-    const cx = w / 2 + (i - (n - 1) / 2) * span;
-    const cy = h * 0.68 + (pose.stagger ? (i % 2 ? -0.08 : 0.06) * h : 0);
-    const P = ([x, y]) => [cx + x * scale, cy + y * scale];
-    const a = ARMS[armKey] ?? ARMS.down;
-    // 머리
-    const [hx, hy] = P([0, -0.55]);
-    ctx.beginPath();
-    ctx.arc(hx, hy, scale * 0.13, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-    // 몸통
-    const ls = P([-0.18, -0.35]), rs = P([0.18, -0.35]);
-    const lh = P([-0.13, 0.2]), rh = P([0.13, 0.2]);
-    ctx.beginPath();
-    ctx.moveTo(...ls); ctx.lineTo(...rs); ctx.lineTo(...rh); ctx.lineTo(...lh); ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-    // 팔
-    for (const [s, e, wr] of [[ls, a[0], a[1]], [rs, a[2], a[3]]]) {
-      ctx.beginPath();
-      ctx.moveTo(...s); ctx.lineTo(...P(e)); ctx.lineTo(...P(wr));
-      ctx.stroke();
-      ctx.beginPath();
-      ctx.arc(...P(wr), scale * 0.035, 0, Math.PI * 2);
-      ctx.fill();
+/** 미러링된 영상 좌표에서 얼굴이 촬영 범위 안에 있는 사람을 고른다. */
+export function peopleInFrame(people, { left, top, width, height }) {
+  return people.filter(([nose]) => seen(nose) && nose.x >= left && nose.x <= left + width
+    && nose.y >= top && nose.y <= top + height);
+}
+
+/** 촬영 범위 안에 있는 사람 중 각 칸에서 가장 가까운 사람을 한 명씩 고른다. */
+export function peopleInSlots(people, count, { left, width }) {
+  const slots = Array(count).fill(null);
+  const sizes = Array(count).fill(0);
+  for (const person of people) {
+    const position = (person[0].x - left) / width;
+    const index = Math.min(count - 1, Math.floor(position * count));
+    const size = dist(person[11], person[12]);
+    if (!slots[index] || size > sizes[index]) {
+      slots[index] = person;
+      sizes[index] = size;
     }
-  });
-  ctx.restore();
+  }
+  return slots;
 }
 
 // ---------- MediaPipe (선택) ----------

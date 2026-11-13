@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { POSES, CHECKS, side, matchPose, armsFor } from '../src/pose.js';
+import { POSES, CHECKS, side, matchPose, armsFor, peopleInFrame, peopleInSlots } from '../src/pose.js';
 
-// drawGuide와 같은 몸 좌표(사람 중심 기준)로 가짜 랜드마크를 만든다
+// 각 포즈의 손과 팔 좌표로 테스트용 랜드마크를 만든다.
 const ARMS = {
   down: [[-0.24, -0.12], [-0.26, 0.1], [0.24, -0.12], [0.26, 0.1]],
   v: [[-0.24, -0.12], [-0.26, 0.1], [0.27, -0.27], [0.13, -0.56]],
@@ -39,7 +39,7 @@ const check = (name, lm) => {
   return CHECKS[name](b, Math.hypot(b.ls.x - b.rs.x, b.ls.y - b.rs.y));
 };
 
-test('가이드 실루엣대로 서면 자기 포즈 판정을 통과한다', () => {
+test('포즈별 테스트 자세가 해당 판정을 통과한다', () => {
   for (const key of Object.keys(ARMS)) assert.ok(check(key, person(key)), key);
 });
 
@@ -83,4 +83,15 @@ test('인원보다 많이 잡히면 크게 보이는(가까운) 사람으로 판
   const m = matchPose(pose, [passerby, front], 1);
   assert.equal(m.ok, true);
   assert.equal(m.picked[0], front);
+});
+
+test('촬영 범위를 벗어나거나 같은 칸에 모인 사람은 빈 칸을 채우지 않는다', () => {
+  const area = { left: 0.25, top: 0.15, width: 1, height: 0.7 };
+  const left = person('down', { cx: 0.39 });
+  const right = person('down', { cx: 1.1 });
+  const background = person('down', { cx: 0.48, s: 0.2 });
+  const outside = person('down', { cx: 0.1 });
+  const above = person('down', { cx: 0.86, cy: 0.32 });
+  const framed = peopleInFrame([outside, background, right, above, left], area);
+  assert.deepEqual(peopleInSlots(framed, 4, area), [left, null, null, right]);
 });

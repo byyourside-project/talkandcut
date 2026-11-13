@@ -80,7 +80,7 @@ export function recommendFrames({ avgRgb, moodId, headcount }) {
   const photo = avgRgb ? rgbToHsl(avgRgb) : null;
   const layout = headcount >= 3 ? 'grid' : 'strip';
   const layoutReason = headcount >= 3
-    ? `${headcount}명이라 칸이 넓은 2×2가 얼굴이 덜 잘려요`
+    ? `${headcount}명이 찍은 네 컷을 두 줄로 배치해요`
     : headcount === 2 ? '둘이면 세로 네컷 한 칸에 딱 맞아요' : '혼자면 세로 네컷이 인물에 집중돼요';
 
   const results = THEMES.map((t) => {
