@@ -7,7 +7,7 @@ import android.opengl.GLSurfaceView
 import android.os.Handler
 import android.os.Looper
 import com.byyourside.talkandcut.filter.FilterParams
-import com.byyourside.talkandcut.filter.Param
+import com.byyourside.talkandcut.filter.FilterShader
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
@@ -19,7 +19,7 @@ import javax.microedition.khronos.opengles.GL10
  * 뷰 비율로 가운데 cover-crop 해서 보정 후 그린다.
  *
  * 셰이더는 웹과 uniform 이름·계산식이 같다. 차이는 카메라 입력을 위한 것뿐:
- *  - sampler2D → samplerExternalOES
+ *  - sampler2D → samplerExternalOES (FilterShader)
  *  - VS에 u_texMatrix(SurfaceTexture 변환), u_rot(센서 → 화면 회전, 시계 방향 도) 추가
  */
 class FilterRenderer(
@@ -70,7 +70,7 @@ class FilterRenderer(
     fun resetStreaming() { gotFrame = false }
 
     override fun onSurfaceCreated(gl: GL10?, config: EGLConfig?) {
-        program = buildProgram(VS, FS)
+        program = FilterShader.buildProgram(VS, FilterShader.fragment(external = true))
         for (n in UNIFORMS) u[n] = GLES20.glGetUniformLocation(program, n)
 
         val ids = IntArray(1)
@@ -133,16 +133,7 @@ class FilterRenderer(
         GLES20.glUniformMatrix4fv(u.getValue("u_texMatrix"), 1, false, texMatrix, 0)
         GLES20.glUniform1f(u.getValue("u_rot"), shaderRotation.toFloat())
 
-        val p = params
-        GLES20.glUniform1f(u.getValue("u_bri"), p[Param.BRIGHTNESS] / 100f)
-        GLES20.glUniform1f(u.getValue("u_con"), p[Param.CONTRAST] / 100f)
-        GLES20.glUniform1f(u.getValue("u_sat"), p[Param.SATURATION] / 100f)
-        GLES20.glUniform1f(u.getValue("u_warm"), p[Param.WARMTH] / 100f)
-        GLES20.glUniform1f(u.getValue("u_tint"), p[Param.TINT] / 100f)
-        GLES20.glUniform1f(u.getValue("u_fade"), p[Param.FADE] / 100f)
-        GLES20.glUniform1f(u.getValue("u_vig"), p[Param.VIGNETTE] / 100f)
-        GLES20.glUniform1f(u.getValue("u_grain"), p[Param.GRAIN] / 100f)
-        GLES20.glUniform1f(u.getValue("u_seed"), (System.currentTimeMillis() % 1000) / 100f)
+        FilterShader.setParams(u, params, (System.currentTimeMillis() % 1000) / 100f)
 
         val loc = GLES20.glGetAttribLocation(program, "a_pos")
         GLES20.glEnableVertexAttribArray(loc)
@@ -156,26 +147,10 @@ class FilterRenderer(
         surfaceTexture = null
     }
 
-    private fun buildProgram(vs: String, fs: String): Int {
-        val prog = GLES20.glCreateProgram()
-        for ((type, src) in listOf(GLES20.GL_VERTEX_SHADER to vs, GLES20.GL_FRAGMENT_SHADER to fs)) {
-            val s = GLES20.glCreateShader(type)
-            GLES20.glShaderSource(s, src)
-            GLES20.glCompileShader(s)
-            val ok = IntArray(1)
-            GLES20.glGetShaderiv(s, GLES20.GL_COMPILE_STATUS, ok, 0)
-            if (ok[0] == 0) error(GLES20.glGetShaderInfoLog(s))
-            GLES20.glAttachShader(prog, s)
-        }
-        GLES20.glLinkProgram(prog)
-        return prog
-    }
-
     companion object {
         private val UNIFORMS = listOf(
             "u_tex", "u_scale", "u_offset", "u_flip", "u_texMatrix", "u_rot",
-            "u_bri", "u_con", "u_sat", "u_warm", "u_tint", "u_fade", "u_vig", "u_grain", "u_seed",
-        )
+        ) + FilterShader.PARAM_UNIFORMS
 
         private const val VS = """
 attribute vec2 a_pos;
@@ -201,39 +176,6 @@ void main() {
   vec2 b = toBuffer(uv);
   v_uv = (u_texMatrix * vec4(b.x, 1.0 - b.y, 0.0, 1.0)).xy;
   gl_Position = vec4(a_pos, 0.0, 1.0);
-}"""
-
-        private const val FS = """#extension GL_OES_EGL_image_external : require
-precision mediump float;
-varying vec2 v_uv;
-varying vec2 v_screen;
-uniform samplerExternalOES u_tex;
-uniform float u_bri, u_con, u_sat, u_warm, u_tint, u_fade, u_vig, u_grain, u_seed;
-
-float rand(vec2 c) {
-  return fract(sin(dot(c, vec2(12.9898, 78.233)) + u_seed) * 43758.5453);
-}
-
-void main() {
-  vec3 c = texture2D(u_tex, v_uv).rgb;
-  // 노출(밝기): 곱셈 방식이라 하이라이트가 덜 날아간다
-  c *= pow(2.0, u_bri * 0.9);
-  // 대비
-  c = (c - 0.5) * (1.0 + u_con * 0.8) + 0.5;
-  // 채도
-  float l = dot(c, vec3(0.2126, 0.7152, 0.0722));
-  c = mix(vec3(l), c, 1.0 + u_sat);
-  // 색온도(따뜻/차갑) & 색조(마젠타/그린)
-  c += vec3(u_warm * 0.09, -u_tint * 0.06, -u_warm * 0.09);
-  c.rb += u_tint * 0.025;
-  // 페이드: 검정을 들어 올리고 흰색을 살짝 내림
-  c = c * (1.0 - u_fade * 0.24) + u_fade * 0.13;
-  // 비네팅
-  float d = length((v_screen - 0.5) * vec2(1.0, 1.1));
-  c *= 1.0 - u_vig * 0.7 * smoothstep(0.25, 0.8, d);
-  // 그레인
-  c += (rand(gl_FragCoord.xy) - 0.5) * u_grain * 0.2;
-  gl_FragColor = vec4(clamp(c, 0.0, 1.0), 1.0);
 }"""
     }
 }

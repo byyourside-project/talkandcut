@@ -2,6 +2,7 @@ package com.byyourside.talkandcut
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
@@ -67,9 +68,18 @@ private fun CameraPermissionGate(content: @Composable () -> Unit) {
             ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
         )
     }
-    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted = it }
+    // Android 9 이하는 갤러리 저장에 저장소 권한이 필요하다. 카메라와 같이 받는다.
+    val wanted = remember {
+        buildList {
+            add(Manifest.permission.CAMERA)
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+        }.filter { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED }.toTypedArray()
+    }
+    val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
+        granted = granted || result[Manifest.permission.CAMERA] == true
+    }
     LaunchedEffect(Unit) {
-        if (!granted) launcher.launch(Manifest.permission.CAMERA)
+        if (wanted.isNotEmpty()) launcher.launch(wanted)
     }
     if (granted) {
         content()
@@ -81,7 +91,7 @@ private fun CameraPermissionGate(content: @Composable () -> Unit) {
         ) {
             Text("카메라 권한이 필요해요", color = Color.White, textAlign = TextAlign.Center)
             Spacer(Modifier.height(16.dp))
-            Button(onClick = { launcher.launch(Manifest.permission.CAMERA) }) { Text("카메라 권한 허용") }
+            Button(onClick = { launcher.launch(arrayOf(Manifest.permission.CAMERA)) }) { Text("카메라 권한 허용") }
         }
     }
 }

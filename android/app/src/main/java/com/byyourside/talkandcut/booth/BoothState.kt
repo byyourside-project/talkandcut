@@ -1,6 +1,7 @@
 package com.byyourside.talkandcut.booth
 
 import com.byyourside.talkandcut.filter.FilterParams
+import com.byyourside.talkandcut.frame.FrameRec
 import com.byyourside.talkandcut.frame.LayoutId
 import com.byyourside.talkandcut.pose.Pose
 
@@ -28,6 +29,15 @@ data class BoothState<Shot>(
     val plan: List<List<Pose>> = emptyList(),
     /** 컷별로 후보 중 몇 번째를 쓰는지("다른 포즈"마다 +1). */
     val pick: List<Int> = List(CUTS) { 0 },
+    /** 프레임 테마 id (frame/Themes.kt). */
+    val themeId: String = "white",
+    /** 인화지 하단 문구. */
+    val caption: String = "",
+    /** 프레임 추천 결과(점수순)와 지금 적용한 순번. */
+    val recs: List<FrameRec> = emptyList(),
+    val recIndex: Int = 0,
+    /** 결과 보기(합성 미리보기 + 저장) 화면이 열려 있는지. */
+    val resultOpen: Boolean = false,
 ) {
     /** 다음에 찍을 컷 index, 다 찍었으면 -1. */
     val nextIndex: Int get() = shots.indexOfFirst { it == null }

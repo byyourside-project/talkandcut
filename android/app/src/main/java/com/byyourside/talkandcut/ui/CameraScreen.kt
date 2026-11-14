@@ -1,11 +1,18 @@
 package com.byyourside.talkandcut.ui
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.opengl.GLSurfaceView
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -52,6 +59,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.byyourside.talkandcut.booth.BoothState
 import com.byyourside.talkandcut.booth.BoothViewModel
+import com.byyourside.talkandcut.booth.Command
 import com.byyourside.talkandcut.camera.AndroidBoothSounds
 import com.byyourside.talkandcut.camera.CameraController
 import com.byyourside.talkandcut.camera.FilterRenderer
@@ -111,13 +119,16 @@ fun CameraScreen(viewModel: BoothViewModel) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 Countdown(state.countdown)
             }
-            Column(Modifier.fillMaxWidth().padding(20.dp)) {
-                state.currentPose?.let { pose ->
-                    Text(pose.name, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, style = shadowText)
-                    Text(pose.tip, color = Color.White.copy(alpha = 0.85f), fontSize = 14.sp, style = shadowText)
-                    Spacer(Modifier.height(8.dp))
+            Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.Bottom) {
+                Thumbnail(viewModel, state) { viewModel.execute(Command.Result(true)) }
+                Column(Modifier.weight(1f)) {
+                    state.currentPose?.let { pose ->
+                        Text(pose.name, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, style = shadowText)
+                        Text(pose.tip, color = Color.White.copy(alpha = 0.85f), fontSize = 14.sp, style = shadowText)
+                        Spacer(Modifier.height(8.dp))
+                    }
+                    Text(text = state.reply, color = Color.White, fontSize = 16.sp, style = shadowText)
                 }
-                Text(text = state.reply, color = Color.White, fontSize = 16.sp, style = shadowText)
             }
         }
     }
@@ -126,12 +137,35 @@ fun CameraScreen(viewModel: BoothViewModel) {
         BoothMenuSheet(
             state = state,
             onCommand = { cmd ->
-                menuOpen = false
+                // 견본 고르기는 여러 번 눌러 보므로 메뉴를 닫지 않는다
+                if (cmd !is Command.Theme) menuOpen = false
                 viewModel.execute(cmd)
             },
             onDismiss = { menuOpen = false },
         )
     }
+
+    if (state.resultOpen) {
+        ResultSheet(viewModel.result, state, onCommand = { viewModel.execute(it) })
+    }
+}
+
+/** 왼쪽 아래 합성 미리보기. 누르면 결과 보기. 찍은 컷이 없으면 숨긴다. */
+@Composable
+private fun Thumbnail(viewModel: BoothViewModel, state: BoothState<Bitmap>, onClick: () -> Unit) {
+    if (state.shots.all { it == null }) return
+    val image = rememberComposite(viewModel.result, state) ?: return
+    Image(
+        bitmap = image.asImageBitmap(),
+        contentDescription = "결과 보기",
+        modifier = Modifier
+            .padding(end = 14.dp)
+            .height(84.dp)
+            .aspectRatio(image.width.toFloat() / image.height)
+            .clip(RoundedCornerShape(4.dp))
+            .border(1.5.dp, Color.White, RoundedCornerShape(4.dp))
+            .clickable(enabled = !state.busy, onClick = onClick),
+    )
 }
 
 /** 보정 셰이더가 적용된 카메라 미리보기 뷰. */

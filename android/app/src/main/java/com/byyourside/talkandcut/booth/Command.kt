@@ -34,4 +34,22 @@ sealed interface Command {
 
     /** LAYOUT */
     data class Layout(val layout: LayoutId) : Command
+
+    /** FRAME_RECOMMEND: 사진·보정에 맞는 프레임 추천 후 적용 */
+    data object FrameRecommend : Command
+
+    /** FRAME_NEXT: 다음 추천 프레임 */
+    data object FrameNext : Command
+
+    /** 프레임 견본을 직접 누름(터치 전용, 응답 없음). */
+    data class Theme(val themeId: String) : Command
+
+    /** CAPTION. quiet이면 입력 중 실시간 반영이라 응답하지 않는다(웹 input 이벤트). */
+    data class Caption(val text: String, val quiet: Boolean = false) : Command
+
+    /** SAVE */
+    data object Save : Command
+
+    /** 결과 보기 열기/닫기(터치 전용). */
+    data class Result(val open: Boolean) : Command
 }

@@ -4,6 +4,7 @@ import android.app.Application
 import android.graphics.Bitmap
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.byyourside.talkandcut.frame.ResultRenderer
 import com.byyourside.talkandcut.pose.PoseCatalog
 import kotlinx.coroutines.flow.StateFlow
 
@@ -11,6 +12,9 @@ import kotlinx.coroutines.flow.StateFlow
 class BoothViewModel(app: Application) : AndroidViewModel(app) {
     private var camera: CaptureSource<Bitmap>? = null
     private var sounds: BoothSounds = BoothSounds.None
+
+    /** 결과 합성(썸네일·결과 보기·저장). */
+    val result = ResultRenderer(app)
 
     private val booth = Booth(
         scope = viewModelScope,
@@ -20,6 +24,7 @@ class BoothViewModel(app: Application) : AndroidViewModel(app) {
             override fun beep() = sounds.beep()
             override fun shutter() = sounds.shutter()
         },
+        frames = result,
     )
     private val executor = CommandExecutor(booth)
 
@@ -39,4 +44,8 @@ class BoothViewModel(app: Application) : AndroidViewModel(app) {
     fun setCameraOn(on: Boolean) = booth.setCameraOn(on)
 
     fun execute(command: Command): String = executor.execute(command)
+
+    override fun onCleared() {
+        result.release()
+    }
 }

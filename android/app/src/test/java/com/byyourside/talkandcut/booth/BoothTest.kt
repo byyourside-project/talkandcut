@@ -221,6 +221,133 @@ class BoothTest {
         assertEquals(pick, b.state.value.pick)
     }
 
+    // ---------- Step 4: 프레임 ----------
+
+    private class FakeFrames(var avg: DoubleArray? = null, var ok: Boolean = true) : FrameTools<String> {
+        val saved = mutableListOf<BoothState<String>>()
+        override suspend fun averageColor(shots: List<String?>, params: com.byyourside.talkandcut.filter.FilterParams) =
+            if (shots.any { it != null }) avg else null
+        override suspend fun save(state: BoothState<String>): Boolean { saved += state; return ok }
+    }
+
+    private fun TestScope.framedBooth(frames: FakeFrames): Booth<String> =
+        Booth(this, { "shot${counter++}" }, TestPoses.catalog, frames = frames).also { it.setCameraOn(true) }
+
+    @Test
+    fun fourthCutAppliesTopFrameAndOpensResult() = runTest {
+        // 밝은 무채색 사진 → 클래식 블랙이 1위 (ThemesTest와 같은 입력)
+        val b = framedBooth(FakeFrames(avg = doubleArrayOf(0.8, 0.8, 0.82)))
+        repeat(3) { b.requestCapture(0); advanceUntilIdle() }
+        assertFalse(b.state.value.resultOpen)
+        assertEquals("white", b.state.value.themeId)
+        b.requestCapture(0); advanceUntilIdle()
+        val s = b.state.value
+        assertTrue(s.resultOpen)
+        assertEquals("black", s.themeId)
+        assertEquals("black", s.recs[0].themeId)
+        assertEquals("네 컷을 다 찍었어요", s.reply)
+    }
+
+    @Test
+    fun retakeFromResultClosesAndKeepsChosenFrame() = runTest {
+        val b = framedBooth(FakeFrames(avg = doubleArrayOf(0.8, 0.8, 0.82)))
+        repeat(4) { b.requestCapture(0); advanceUntilIdle() }
+        val ex = CommandExecutor(b)
+        ex.execute(Command.Theme("peach"))
+        ex.execute(Command.Retake(1, 0))
+        assertFalse(b.state.value.resultOpen)
+        advanceUntilIdle()
+        assertTrue(b.state.value.resultOpen)
+        assertEquals("peach", b.state.value.themeId)
+        assertEquals("다시 찍은 컷으로 바꿨어요.", b.state.value.reply)
+    }
+
+    @Test
+    fun cancelRetakeReopensResult() = runTest {
+        val b = framedBooth(FakeFrames())
+        repeat(4) { b.requestCapture(0); advanceUntilIdle() }
+        b.retake(2, 3)
+        assertFalse(b.state.value.resultOpen)
+        assertEquals("원래 컷으로 돌아왔어요.", b.cancelCapture())
+        assertTrue(b.state.value.resultOpen)
+    }
+
+    @Test
+    fun frameRecommendAndNextCycleWithinTopFive() = runTest {
+        val b = framedBooth(FakeFrames(avg = doubleArrayOf(0.6, 0.5, 0.4)))
+        val ex = CommandExecutor(b)
+        b.applyFilter(EmotionInterpreter.moodChip(moodById("warm")!!))
+        b.requestCapture(0); advanceUntilIdle()
+        assertEquals("복숭아 우유 추천해요. 지금 보정한 분위기와 같은 계열", ex.execute(Command.FrameRecommend))
+        assertEquals("peach", b.state.value.themeId)
+        val names = (1..5).map { ex.execute(Command.FrameNext) }
+        assertEquals(
+            listOf("벽돌 레트로로 바꿨어요", "숲속 오후로 바꿨어요", "레몬 소다로 바꿨어요", "클래식 화이트로 바꿨어요", "복숭아 우유로 바꿨어요"),
+            names,
+        )
+    }
+
+    @Test
+    fun frameNextWithoutRecsRecommendsFirst() = runTest {
+        val b = framedBooth(FakeFrames())
+        // 추천 전: 점수가 모두 0이라 THEMES 순서, 다음은 두 번째(클래식 블랙)
+        assertEquals("클래식 블랙로 바꿨어요", CommandExecutor(b).execute(Command.FrameNext))
+    }
+
+    @Test
+    fun captionReplies() = runTest {
+        val b = framedBooth(FakeFrames())
+        val ex = CommandExecutor(b)
+        assertEquals("문구를 “우리 우정”로 넣었어요", ex.execute(Command.Caption("우리 우정")))
+        assertEquals("우리 우정", b.state.value.caption)
+        assertEquals("", ex.execute(Command.Caption("우리", quiet = true)))
+        assertEquals("우리", b.state.value.caption)
+        assertEquals("문구를 지웠어요", ex.execute(Command.Caption("")))
+    }
+
+    @Test
+    fun saveReplies() = runTest {
+        val frames = FakeFrames()
+        val b = framedBooth(frames)
+        val ex = CommandExecutor(b)
+        assertEquals("아직 찍은 사진이 없어요", ex.execute(Command.Save))
+        b.requestCapture(0); advanceUntilIdle()
+        assertEquals("찍은 컷까지만 저장했어요", ex.execute(Command.Save))
+        advanceUntilIdle()
+        assertEquals(1, frames.saved.size)
+        repeat(3) { b.requestCapture(0); advanceUntilIdle() }
+        assertEquals("사진을 저장했어요", ex.execute(Command.Save))
+        frames.ok = false
+        ex.execute(Command.Save)
+        advanceUntilIdle()
+        assertEquals("사진을 저장하지 못했어요. 다시 시도해 주세요", b.state.value.reply)
+    }
+
+    @Test
+    fun restartResetsFrameState() = runTest {
+        val b = framedBooth(FakeFrames())
+        repeat(4) { b.requestCapture(0); advanceUntilIdle() }
+        b.setTheme("lemon")
+        b.setCaption("안녕")
+        b.restart()
+        val s = b.state.value
+        assertEquals("white", s.themeId)
+        assertEquals("", s.caption)
+        assertTrue(s.recs.isEmpty())
+        assertFalse(s.resultOpen)
+    }
+
+    @Test
+    fun resultNeedsAShot() = runTest {
+        val b = framedBooth(FakeFrames())
+        assertEquals("아직 찍은 사진이 없어요", b.showResult(true))
+        b.requestCapture(0); advanceUntilIdle()
+        b.showResult(true)
+        assertTrue(b.state.value.resultOpen)
+        b.showResult(false)
+        assertFalse(b.state.value.resultOpen)
+    }
+
     @Test
     fun failedCaptureKeepsCutEmpty() = runTest {
         val b = Booth<String>(this, { null }, TestPoses.catalog).also { it.setCameraOn(true) }
