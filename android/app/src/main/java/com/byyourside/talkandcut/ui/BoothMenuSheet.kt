@@ -24,12 +24,14 @@ import com.byyourside.talkandcut.booth.BoothState
 import com.byyourside.talkandcut.booth.Command
 import com.byyourside.talkandcut.frame.LayoutId
 import com.byyourside.talkandcut.frame.Layouts
+import com.byyourside.talkandcut.voice.VoiceSession
 
-/** 오른쪽 위 메뉴. 음성 명령과 같은 Command를 만든다. 촬영·포즈·보정·프레임·저장. */
+/** 오른쪽 위 메뉴. 음성 명령과 같은 Command를 만든다. 음성·촬영·포즈·보정·프레임·저장. */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun BoothMenuSheet(
     state: BoothState<*>,
+    voice: VoiceSession,
     onCommand: (Command) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -47,6 +49,8 @@ fun BoothMenuSheet(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             val canShoot = state.cameraOn && !state.busy && state.currentIndex >= 0
+
+            VoiceMenuGroup(voice, onClose = onDismiss)
 
             Section("촬영")
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

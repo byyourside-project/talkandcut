@@ -4,12 +4,15 @@ import com.byyourside.talkandcut.filter.MoodResult
 import com.byyourside.talkandcut.frame.LayoutId
 
 /**
- * 웹 src/intent.js 상단 스키마의 명령. Step 1에서는 촬영·레이아웃 명령만 둔다.
+ * 웹 src/intent.js 상단 스키마의 명령. JSON 변환은 command/CommandJson.kt.
  * 메뉴 버튼과 (Step 5의) 음성 모두 이 객체를 만들어 CommandExecutor로 보낸다.
  */
 sealed interface Command {
-    /** CAPTURE. delay=0이면 바로 촬영. */
-    data class Capture(val delay: Int = 3) : Command
+    /**
+     * CAPTURE. delay=0이면 바로 촬영.
+     * poseMatch: 웹 when='POSE_MATCH'(포즈 맞추면 찍기). 앱은 포즈 판정이 없어 일반 카운트다운으로 찍는다.
+     */
+    data class Capture(val delay: Int = 3, val poseMatch: Boolean = false) : Command
 
     /** CANCEL */
     data object Cancel : Command
@@ -31,6 +34,15 @@ sealed interface Command {
 
     /** POSE_NEXT: 지금 컷의 다른 포즈 */
     data object PoseNext : Command
+
+    /** POSE_PLAN: 이번 컷 포즈 알려주기 */
+    data object PosePlan : Command
+
+    /** POSE_V: 브이 포즈 고르기 */
+    data object PoseV : Command
+
+    /** HOME: 앱은 홈 화면이 없어 처음부터와 같다. */
+    data object Home : Command
 
     /** LAYOUT */
     data class Layout(val layout: LayoutId) : Command

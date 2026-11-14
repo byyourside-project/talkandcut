@@ -13,7 +13,9 @@ import com.byyourside.talkandcut.pose.PosePlanner
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
@@ -75,19 +77,34 @@ class Booth<Shot>(
 
     fun setCameraOn(on: Boolean) = _state.update { it.copy(cameraOn = on) }
 
+    private val _announcements = MutableSharedFlow<String>(extraBufferCapacity = 8)
+
+    /**
+     * 명령 응답이 아니라 나중에(코루틴 안에서) 나오는 안내. 촬영 결과·실패, 저장 실패.
+     * 웹은 이 안내들을 음성으로 읽는다(reply의 speak 기본값 true).
+     */
+    val announcements: SharedFlow<String> = _announcements
+
     override fun reply(text: String) {
         if (text.isNotEmpty()) _state.update { it.copy(reply = text) }
     }
 
+    private fun announce(text: String) {
+        reply(text)
+        _announcements.tryEmit(text)
+    }
+
     // ---------- 촬영 ----------
 
-    override fun requestCapture(delay: Int): String {
+    override fun requestCapture(delay: Int, poseMatch: Boolean): String {
         if (s.shutterOn) return "사진을 찍는 중이에요"
         val idx = s.currentIndex
         if (idx < 0) return "네 컷을 다 찍었어요"
         if (!s.cameraOn) return "카메라 연결을 확인해 주세요"
         if (s.counting) return "이미 촬영 중이에요"
         startCountdown(delay, idx)
+        // 웹은 포즈를 판정해서 맞으면 찍는다. 앱은 판정이 없어 평소처럼 카운트다운한다.
+        if (poseMatch) return "포즈 판정은 지원하지 않아서 ${delay}초 뒤에 찍을게요"
         return if (delay > 0) "${idx + 1}번째 컷, ${delay}초 뒤에 찍을게요" else "바로 찍을게요"
     }
 
@@ -116,7 +133,7 @@ class Booth<Shot>(
         countdownJob = null
         _state.update { it.copy(counting = false, countdown = null) }
         if (!s.cameraOn) {
-            reply("카메라를 준비 중이에요. 잠시 후 다시 찍어 주세요")
+            announce("카메라를 준비 중이에요. 잠시 후 다시 찍어 주세요")
             return
         }
         _state.update { it.copy(shutterOn = true) }
@@ -125,7 +142,7 @@ class Booth<Shot>(
             val shot = camera.capture(Layouts.cellAspect(s.layout))
             if (shot == null) {
                 _state.update { it.copy(shutterOn = false) }
-                reply("카메라를 준비 중이에요. 잠시 후 다시 찍어 주세요")
+                announce("카메라를 준비 중이에요. 잠시 후 다시 찍어 주세요")
                 return@launch
             }
             val replaced = s.retake != null
@@ -148,7 +165,7 @@ class Booth<Shot>(
                 recommendNow(apply = !replaced)
                 _state.update { it.copy(resultOpen = true) }
             }
-            reply(
+            announce(
                 when {
                     next >= 0 -> "좋아요. ${next + 1}번째 컷을 준비해 주세요."
                     replaced -> "다시 찍은 컷으로 바꿨어요."
@@ -215,6 +232,22 @@ class Booth<Shot>(
         if (i < 0) return "네 컷을 다 찍었어요"
         _state.update { st -> st.copy(pick = st.pick.toMutableList().also { it[i]++ }) }
         return "그럼 ${s.currentPose?.name} 어때요"
+    }
+
+    override fun posePlan(): String {
+        val p = s.currentPose ?: return "네 컷을 다 찍었어요"
+        return "이번 컷은 ${p.name}. ${p.tip}"
+    }
+
+    /** 웹 POSE_V → selectPose: 인원별 브이 포즈를 지금 컷 후보에서 고른다. */
+    override fun poseV(): String {
+        val id = listOf("v", "v", "zigzagV", "twoLevelV")[s.headcount - 1]
+        val cut = s.currentIndex
+        if (cut < 0) return "네 컷을 다 찍었어요"
+        val pick = s.plan[cut].indexOfFirst { it.id == id }
+        if (pick < 0) return "현재 인원에 맞는 포즈를 메뉴에서 골라 주세요"
+        _state.update { st -> st.copy(pick = st.pick.toMutableList().also { it[cut] = pick }) }
+        return "${s.currentPose?.name} 가이드를 띄웠어요"
     }
 
     // ---------- 보정 ----------
@@ -294,7 +327,7 @@ class Booth<Shot>(
         if (s.shots.all { it == null }) return "아직 찍은 사진이 없어요"
         val snapshot = s
         scope.launch {
-            if (!frames.save(snapshot)) reply("사진을 저장하지 못했어요. 다시 시도해 주세요")
+            if (!frames.save(snapshot)) announce("사진을 저장하지 못했어요. 다시 시도해 주세요")
         }
         return if (snapshot.shots.all { it != null }) "사진을 저장했어요" else "찍은 컷까지만 저장했어요"
     }

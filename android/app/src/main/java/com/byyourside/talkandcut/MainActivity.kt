@@ -3,6 +3,8 @@ package com.byyourside.talkandcut
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
+import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.os.Bundle
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
@@ -54,29 +56,47 @@ class MainActivity : ComponentActivity() {
         }
         setContent {
             MaterialTheme(colorScheme = darkColorScheme()) {
-                CameraPermissionGate { CameraScreen(viewModel) }
+                CameraPermissionGate(onMicGranted = { viewModel.voice.start() }) { CameraScreen(viewModel) }
             }
         }
+        handleDebugUtterance(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleDebugUtterance(intent)
+    }
+
+    /**
+     * 디버그 빌드 전용 리허설·테스트 입구. 메뉴 "문장 직접 입력"과 같은 해석 경로를 탄다.
+     * adb shell am start -n com.byyourside.talkandcut/.MainActivity --es utterance "찍어줘"
+     */
+    private fun handleDebugUtterance(intent: Intent?) {
+        if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) return
+        intent?.getStringExtra("utterance")?.let(viewModel.voice::typed)
     }
 }
 
 @Composable
-private fun CameraPermissionGate(content: @Composable () -> Unit) {
+private fun CameraPermissionGate(onMicGranted: () -> Unit, content: @Composable () -> Unit) {
     val context = LocalContext.current
     var granted by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
         )
     }
-    // Android 9 이하는 갤러리 저장에 저장소 권한이 필요하다. 카메라와 같이 받는다.
+    // 마이크(음성 명령)와 Android 9 이하 저장소 권한(갤러리 저장)도 카메라와 같이 받는다. 카메라만 필수.
     val wanted = remember {
         buildList {
             add(Manifest.permission.CAMERA)
+            add(Manifest.permission.RECORD_AUDIO)
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
         }.filter { ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED }.toTypedArray()
     }
     val launcher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
         granted = granted || result[Manifest.permission.CAMERA] == true
+        // 화면이 먼저 떠서 마이크가 권한 없음(DENIED)이 됐을 수 있으니 허용되면 다시 연결한다
+        if (result[Manifest.permission.RECORD_AUDIO] == true) onMicGranted()
     }
     LaunchedEffect(Unit) {
         if (wanted.isNotEmpty()) launcher.launch(wanted)

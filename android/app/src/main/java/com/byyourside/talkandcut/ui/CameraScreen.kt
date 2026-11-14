@@ -65,7 +65,7 @@ import com.byyourside.talkandcut.camera.CameraController
 import com.byyourside.talkandcut.camera.FilterRenderer
 import com.byyourside.talkandcut.frame.Layouts
 
-private val shadowText = TextStyle(shadow = Shadow(Color.Black.copy(alpha = 0.6f), Offset(0f, 2f), 8f))
+internal val shadowText = TextStyle(shadow = Shadow(Color.Black.copy(alpha = 0.6f), Offset(0f, 2f), 8f))
 
 @Composable
 fun CameraScreen(viewModel: BoothViewModel) {
@@ -82,9 +82,11 @@ fun CameraScreen(viewModel: BoothViewModel) {
         viewModel.attach(camera, sounds)
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
+                Lifecycle.Event.ON_START -> viewModel.voice.start()
                 Lifecycle.Event.ON_RESUME -> preview.view.onResume()
                 Lifecycle.Event.ON_PAUSE -> preview.view.onPause()
                 Lifecycle.Event.ON_STOP -> {
+                    viewModel.voice.stop()
                     viewModel.setCameraOn(false)
                     preview.renderer.resetStreaming()
                 }
@@ -116,6 +118,7 @@ fun CameraScreen(viewModel: BoothViewModel) {
 
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
             TopBar(state, onMenu = { menuOpen = true })
+            VoiceBar(viewModel.voice)
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 Countdown(state.countdown)
             }
@@ -136,6 +139,7 @@ fun CameraScreen(viewModel: BoothViewModel) {
     if (menuOpen) {
         BoothMenuSheet(
             state = state,
+            voice = viewModel.voice,
             onCommand = { cmd ->
                 // 견본 고르기는 여러 번 눌러 보므로 메뉴를 닫지 않는다
                 if (cmd !is Command.Theme) menuOpen = false

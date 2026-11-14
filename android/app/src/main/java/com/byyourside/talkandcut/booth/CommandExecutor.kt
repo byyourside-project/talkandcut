@@ -7,7 +7,7 @@ import com.byyourside.talkandcut.frame.LayoutId
 class CommandExecutor(private val booth: BoothController) {
     fun execute(command: Command): String {
         val text = when (command) {
-            is Command.Capture -> booth.requestCapture(command.delay)
+            is Command.Capture -> booth.requestCapture(command.delay, command.poseMatch)
             Command.Cancel -> booth.cancelCapture()
             is Command.Retake -> booth.retake(command.index, command.delay)
             Command.Start -> booth.restart()
@@ -16,6 +16,9 @@ class CommandExecutor(private val booth: BoothController) {
             Command.ResetFilter -> booth.resetFilter()
             is Command.Headcount -> booth.setHeadcount(command.count)
             Command.PoseNext -> booth.poseNext()
+            Command.PosePlan -> booth.posePlan()
+            Command.PoseV -> booth.poseV()
+            Command.Home -> booth.restart()
             Command.FrameRecommend -> booth.frameRecommend()
             Command.FrameNext -> booth.frameNext()
             is Command.Theme -> booth.setTheme(command.themeId)
@@ -30,7 +33,7 @@ class CommandExecutor(private val booth: BoothController) {
 
 /** CommandExecutor가 쓰는 촬영 동작. [Booth]가 구현한다. 빈 문자열이면 응답하지 않는다. */
 interface BoothController {
-    fun requestCapture(delay: Int = 3): String
+    fun requestCapture(delay: Int = 3, poseMatch: Boolean = false): String
     fun cancelCapture(): String
     fun retake(index: Int?, delay: Int = 3): String
     fun restart(): String
@@ -39,6 +42,8 @@ interface BoothController {
     fun resetFilter(): String
     fun setHeadcount(count: Int): String
     fun poseNext(): String
+    fun posePlan(): String
+    fun poseV(): String
     fun frameRecommend(): String
     fun frameNext(): String
     fun setTheme(themeId: String): String
