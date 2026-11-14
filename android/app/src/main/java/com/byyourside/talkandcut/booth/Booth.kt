@@ -1,5 +1,9 @@
 package com.byyourside.talkandcut.booth
 
+import com.byyourside.talkandcut.filter.EmotionInterpreter
+import com.byyourside.talkandcut.filter.FilterParams
+import com.byyourside.talkandcut.filter.MoodMode
+import com.byyourside.talkandcut.filter.MoodResult
 import com.byyourside.talkandcut.frame.LayoutId
 import com.byyourside.talkandcut.frame.Layouts
 import kotlinx.coroutines.CoroutineScope
@@ -150,6 +154,26 @@ class Booth<Shot>(
         shutterJob = null
         cancelCountdown()
         _state.update { BoothState(layout = it.layout, cameraOn = it.cameraOn) }
+    }
+
+    // ---------- 보정 ----------
+
+    /** 웹 applyFilter: 적용 후 바뀐 값을 설명하는 문장을 돌려준다. */
+    override fun applyFilter(result: MoodResult): String {
+        val before = s.params
+        val after = EmotionInterpreter.applyMood(before, result)
+        val moodId = if (result.mode == MoodMode.SET) {
+            result.moodIds.firstOrNull() ?: EmotionInterpreter.nearestMood(after)
+        } else {
+            s.moodId ?: EmotionInterpreter.nearestMood(after)
+        }
+        _state.update { it.copy(params = after, moodId = moodId) }
+        return EmotionInterpreter.explain(result, before, after)
+    }
+
+    override fun resetFilter(): String {
+        _state.update { it.copy(params = FilterParams.NEUTRAL, moodId = null) }
+        return "보정을 껐어요"
     }
 
     // ---------- 레이아웃 ----------

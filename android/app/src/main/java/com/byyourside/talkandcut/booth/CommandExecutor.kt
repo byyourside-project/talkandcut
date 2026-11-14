@@ -9,6 +9,8 @@ class CommandExecutor(private val booth: BoothController) {
             is Command.Retake -> booth.retake(command.index, command.delay)
             Command.Start -> booth.restart()
             is Command.Layout -> booth.setLayout(command.layout)
+            is Command.Filter -> booth.applyFilter(command.result)
+            Command.ResetFilter -> booth.resetFilter()
         }
         booth.reply(text)
         return text
@@ -22,5 +24,7 @@ interface BoothController {
     fun retake(index: Int?, delay: Int = 3): String
     fun restart(): String
     fun setLayout(layout: com.byyourside.talkandcut.frame.LayoutId): String
+    fun applyFilter(result: com.byyourside.talkandcut.filter.MoodResult): String
+    fun resetFilter(): String
     fun reply(text: String)
 }

@@ -1,6 +1,7 @@
 package com.byyourside.talkandcut.ui
 
-import androidx.camera.view.PreviewView
+import android.content.Context
+import android.opengl.GLSurfaceView
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
@@ -26,6 +27,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,13 +45,15 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.lifecycle.Observer
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.byyourside.talkandcut.booth.BoothState
 import com.byyourside.talkandcut.booth.BoothViewModel
 import com.byyourside.talkandcut.camera.AndroidBoothSounds
 import com.byyourside.talkandcut.camera.CameraController
+import com.byyourside.talkandcut.camera.FilterRenderer
 import com.byyourside.talkandcut.frame.Layouts
 
 private val shadowText = TextStyle(shadow = Shadow(Color.Black.copy(alpha = 0.6f), Offset(0f, 2f), 8f))
@@ -60,27 +64,38 @@ fun CameraScreen(viewModel: BoothViewModel) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val camera = remember { CameraController(context) }
-    val previewView = remember { PreviewView(context) }
+    val preview = remember { GlPreview(context, camera) { viewModel.setCameraOn(true) } }
     var menuOpen by remember { mutableStateOf(false) }
 
     DisposableEffect(lifecycleOwner) {
         val sounds = AndroidBoothSounds()
-        camera.bind(lifecycleOwner, previewView)
+        camera.bind(lifecycleOwner)
         viewModel.attach(camera, sounds)
-        val streamObserver = Observer<PreviewView.StreamState> {
-            viewModel.setCameraOn(it == PreviewView.StreamState.STREAMING)
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> preview.view.onResume()
+                Lifecycle.Event.ON_PAUSE -> preview.view.onPause()
+                Lifecycle.Event.ON_STOP -> {
+                    viewModel.setCameraOn(false)
+                    preview.renderer.resetStreaming()
+                }
+                else -> {}
+            }
         }
-        previewView.previewStreamState.observe(lifecycleOwner, streamObserver)
+        lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
-            previewView.previewStreamState.removeObserver(streamObserver)
+            lifecycleOwner.lifecycle.removeObserver(observer)
             camera.unbind()
             viewModel.detach()
             sounds.release()
         }
     }
 
+    // 보정값은 미리보기에만 적용한다 (컷은 원본 보관)
+    SideEffect { preview.renderer.params = state.params }
+
     Box(Modifier.fillMaxSize().background(Color.Black)) {
-        Viewfinder(state, previewView)
+        Viewfinder(state, preview.view)
 
         // 셔터 플래시
         val flash by animateFloatAsState(
@@ -117,9 +132,25 @@ fun CameraScreen(viewModel: BoothViewModel) {
     }
 }
 
+/** 보정 셰이더가 적용된 카메라 미리보기 뷰. */
+private class GlPreview(context: Context, camera: CameraController, onFirstFrame: () -> Unit) {
+    val view = GLSurfaceView(context)
+    val renderer: FilterRenderer
+
+    init {
+        view.setEGLContextClientVersion(3)
+        view.preserveEGLContextOnPause = true
+        lateinit var r: FilterRenderer
+        r = FilterRenderer(view, onSurfaceTexture = { st -> camera.attach(r, st) }, onFirstFrame = onFirstFrame)
+        renderer = r
+        view.setRenderer(r)
+        view.renderMode = GLSurfaceView.RENDERMODE_WHEN_DIRTY
+    }
+}
+
 /** 미리보기를 레이아웃 칸 비율(cellAspect)로 가운데 배치. 바깥은 어둡게 둔다. */
 @Composable
-private fun Viewfinder(state: BoothState<*>, previewView: PreviewView) {
+private fun Viewfinder(state: BoothState<*>, previewView: GLSurfaceView) {
     BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         val aspect = Layouts.cellAspect(state.layout).toFloat()
         val w = minOf(maxWidth, maxHeight * aspect)

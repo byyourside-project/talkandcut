@@ -1,5 +1,6 @@
 package com.byyourside.talkandcut.booth
 
+import com.byyourside.talkandcut.filter.MoodResult
 import com.byyourside.talkandcut.frame.LayoutId
 
 /**
@@ -18,6 +19,12 @@ sealed interface Command {
 
     /** START: 처음부터 */
     data object Start : Command
+
+    /** FILTER */
+    data class Filter(val result: MoodResult) : Command
+
+    /** RESET_FILTER */
+    data object ResetFilter : Command
 
     /** LAYOUT */
     data class Layout(val layout: LayoutId) : Command

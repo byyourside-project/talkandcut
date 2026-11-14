@@ -1,5 +1,8 @@
 package com.byyourside.talkandcut.booth
 
+import com.byyourside.talkandcut.filter.EmotionInterpreter
+import com.byyourside.talkandcut.filter.Param
+import com.byyourside.talkandcut.filter.moodById
 import com.byyourside.talkandcut.frame.LayoutId
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
@@ -143,6 +146,33 @@ class BoothTest {
         assertEquals("1번째 컷, 3초 뒤에 찍을게요", b.state.value.reply)
         assertEquals("촬영을 멈췄어요", ex.execute(Command.Cancel))
         assertEquals("1×4 세로 네컷으로 바꿨어요", ex.execute(Command.Layout(LayoutId.STRIP)))
+    }
+
+    @Test
+    fun filterCommandsUpdateParamsAndMood() = runTest {
+        val b = booth()
+        val ex = CommandExecutor(b)
+        val warm = moodById("warm")!!
+        assertEquals("따뜻한 느낌으로 색온도 +35, 페이드 +10, 밝기 +5, 채도 +5", ex.execute(Command.Filter(EmotionInterpreter.moodChip(warm))))
+        assertEquals(35, b.state.value.params[Param.WARMTH])
+        assertEquals("warm", b.state.value.moodId)
+
+        ex.execute(Command.Filter(EmotionInterpreter.nudge(warm, less = false)))
+        assertEquals(35 + 15, b.state.value.params[Param.WARMTH])
+        assertEquals("warm", b.state.value.moodId)
+
+        assertEquals("보정을 껐어요", ex.execute(Command.ResetFilter))
+        assertTrue(b.state.value.params.isNeutral)
+        assertNull(b.state.value.moodId)
+    }
+
+    @Test
+    fun restartClearsFilter() = runTest {
+        val b = booth()
+        b.applyFilter(EmotionInterpreter.moodChip(moodById("mono")!!))
+        b.restart()
+        assertTrue(b.state.value.params.isNeutral)
+        assertNull(b.state.value.moodId)
     }
 
     @Test

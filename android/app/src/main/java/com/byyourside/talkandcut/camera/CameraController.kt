@@ -3,10 +3,12 @@ package com.byyourside.talkandcut.camera
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Matrix
+import android.graphics.SurfaceTexture
 import android.media.AudioManager
 import android.media.MediaActionSound
 import android.media.ToneGenerator
 import android.util.Size
+import android.view.Surface
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
@@ -14,8 +16,8 @@ import androidx.camera.core.ImageProxy
 import androidx.camera.core.resolutionselector.AspectRatioStrategy
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
-import androidx.camera.view.LifecycleCameraController
-import androidx.camera.view.PreviewView
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
 import com.byyourside.talkandcut.booth.BoothSounds
@@ -26,45 +28,58 @@ import kotlin.coroutines.resume
 import kotlin.math.roundToInt
 
 /**
- * CameraX 전면 카메라. 미리보기는 PreviewView(거울 모드), 촬영은 ImageCapture.
- * 찍은 사진은 미리보기와 똑같이 보이도록 회전·좌우반전한 뒤 칸 비율로 가운데를 자른다(보정 전 원본).
+ * CameraX 전면 카메라. 미리보기는 Preview → FilterRenderer(SurfaceTexture, 보정 셰이더),
+ * 촬영은 ImageCapture. 찍은 사진은 미리보기와 똑같이 보이도록 회전·좌우반전한 뒤
+ * 칸 비율로 가운데를 자른다(보정 전 원본).
  */
 class CameraController(context: Context) : CaptureSource<Bitmap> {
     private val appContext = context.applicationContext
     private val executor = ContextCompat.getMainExecutor(appContext)
+    private val providerFuture = ProcessCameraProvider.getInstance(appContext)
 
-    private val resolution = ResolutionSelector.Builder()
+    private fun selector(w: Int, h: Int) = ResolutionSelector.Builder()
         .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
-        .setResolutionStrategy(
-            ResolutionStrategy(Size(1920, 1440), ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER)
-        )
+        .setResolutionStrategy(ResolutionStrategy(Size(w, h), ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER))
         .build()
 
-    val controller = LifecycleCameraController(appContext).apply {
-        cameraSelector = CameraSelector.DEFAULT_FRONT_CAMERA
-        imageCaptureMode = ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY
-        imageCaptureResolutionSelector = resolution
-        previewResolutionSelector = ResolutionSelector.Builder()
-            .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
-            .setResolutionStrategy(
-                ResolutionStrategy(Size(1280, 960), ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER)
-            )
-            .build()
-        setEnabledUseCases(LifecycleCameraController.IMAGE_CAPTURE)
-    }
+    // GL 미리보기 성능을 위해 미리보기는 960p 이하
+    private val preview = Preview.Builder().setResolutionSelector(selector(1280, 960)).build()
+    private val imageCapture = ImageCapture.Builder()
+        .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+        .setResolutionSelector(selector(1920, 1440))
+        .build()
 
-    fun bind(owner: LifecycleOwner, view: PreviewView) {
-        view.scaleType = PreviewView.ScaleType.FILL_CENTER
-        view.controller = controller
-        controller.bindToLifecycle(owner)
+    private var renderer: FilterRenderer? = null
+
+    fun bind(owner: LifecycleOwner) {
+        providerFuture.addListener({
+            val provider = providerFuture.get()
+            provider.unbindAll()
+            provider.bindToLifecycle(owner, CameraSelector.DEFAULT_FRONT_CAMERA, preview, imageCapture)
+        }, executor)
     }
 
     fun unbind() {
-        controller.unbind()
+        preview.setSurfaceProvider(null)
+        if (providerFuture.isDone) providerFuture.get().unbindAll()
+        renderer = null
+    }
+
+    /** FilterRenderer가 새 SurfaceTexture를 만들 때마다 카메라 미리보기를 연결한다. */
+    fun attach(renderer: FilterRenderer, st: SurfaceTexture) {
+        this.renderer = renderer
+        preview.setSurfaceProvider(executor) { request ->
+            val res = request.resolution
+            st.setDefaultBufferSize(res.width, res.height)
+            renderer.setSource(res.width, res.height)
+            request.setTransformationInfoListener(executor) { info -> renderer.setTransform(info.rotationDegrees, info.hasCameraTransform()) }
+            val surface = Surface(st)
+            request.provideSurface(surface, executor) { surface.release() }
+        }
     }
 
     override suspend fun capture(aspect: Double): Bitmap? = suspendCancellableCoroutine { cont ->
-        controller.takePicture(executor, object : ImageCapture.OnImageCapturedCallback() {
+        imageCapture.takePicture(executor, object : ImageCapture.OnImageCapturedCallback() {
             override fun onCaptureSuccess(image: ImageProxy) {
                 val result = runCatching { toShot(image, aspect) }.getOrNull()
                 image.close()

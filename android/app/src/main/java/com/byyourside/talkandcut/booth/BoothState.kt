@@ -1,5 +1,6 @@
 package com.byyourside.talkandcut.booth
 
+import com.byyourside.talkandcut.filter.FilterParams
 import com.byyourside.talkandcut.frame.LayoutId
 
 /**
@@ -17,6 +18,9 @@ data class BoothState<Shot>(
     val shutterOn: Boolean = false,
     val cameraOn: Boolean = false,
     val reply: String = "",
+    /** 보정값. 미리보기에만 적용되고 컷은 원본으로 보관한다. */
+    val params: FilterParams = FilterParams.NEUTRAL,
+    val moodId: String? = null,
 ) {
     /** 다음에 찍을 컷 index, 다 찍었으면 -1. */
     val nextIndex: Int get() = shots.indexOfFirst { it == null }

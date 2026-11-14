@@ -22,10 +22,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.byyourside.talkandcut.booth.BoothState
 import com.byyourside.talkandcut.booth.Command
+import com.byyourside.talkandcut.filter.EmotionInterpreter
+import com.byyourside.talkandcut.filter.MOODS
+import com.byyourside.talkandcut.filter.moodById
 import com.byyourside.talkandcut.frame.LayoutId
 import com.byyourside.talkandcut.frame.Layouts
 
-/** 오른쪽 위 메뉴. 음성 명령과 같은 Command를 만든다. Step 1: 촬영·레이아웃. */
+/** 오른쪽 위 메뉴. 음성 명령과 같은 Command를 만든다. 촬영·보정·레이아웃. */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun BoothMenuSheet(
@@ -68,6 +71,32 @@ fun BoothMenuSheet(
                         ) { Text("${i + 1}번째 컷") }
                     }
                 }
+            }
+
+            Section("보정")
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MOODS.forEach { mood ->
+                    FilterChip(
+                        selected = state.moodId == mood.id,
+                        onClick = { onCommand(Command.Filter(EmotionInterpreter.moodChip(mood))) },
+                        label = { Text(mood.label) },
+                    )
+                }
+            }
+            val current = moodById(state.moodId)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = { current?.let { onCommand(Command.Filter(EmotionInterpreter.nudge(it, less = false))) } },
+                    enabled = current != null,
+                ) { Text("조금 더") }
+                OutlinedButton(
+                    onClick = { current?.let { onCommand(Command.Filter(EmotionInterpreter.nudge(it, less = true))) } },
+                    enabled = current != null,
+                ) { Text("조금 덜") }
+                OutlinedButton(
+                    onClick = { onCommand(Command.ResetFilter) },
+                    enabled = !state.params.isNeutral,
+                ) { Text("원본") }
             }
 
             Section("프레임")
