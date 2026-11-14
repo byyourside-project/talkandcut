@@ -11,6 +11,8 @@ class CommandExecutor(private val booth: BoothController) {
             is Command.Layout -> booth.setLayout(command.layout)
             is Command.Filter -> booth.applyFilter(command.result)
             Command.ResetFilter -> booth.resetFilter()
+            is Command.Headcount -> booth.setHeadcount(command.count)
+            Command.PoseNext -> booth.poseNext()
         }
         booth.reply(text)
         return text
@@ -26,5 +28,7 @@ interface BoothController {
     fun setLayout(layout: com.byyourside.talkandcut.frame.LayoutId): String
     fun applyFilter(result: com.byyourside.talkandcut.filter.MoodResult): String
     fun resetFilter(): String
+    fun setHeadcount(count: Int): String
+    fun poseNext(): String
     fun reply(text: String)
 }

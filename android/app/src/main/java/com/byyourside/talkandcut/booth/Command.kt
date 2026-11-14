@@ -26,6 +26,12 @@ sealed interface Command {
     /** RESET_FILTER */
     data object ResetFilter : Command
 
+    /** HEADCOUNT */
+    data class Headcount(val count: Int) : Command
+
+    /** POSE_NEXT: 지금 컷의 다른 포즈 */
+    data object PoseNext : Command
+
     /** LAYOUT */
     data class Layout(val layout: LayoutId) : Command
 }

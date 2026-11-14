@@ -1,0 +1,9 @@
+{
+  "name": "talkandcut-android-tools",
+  "private": true,
+  "type": "module",
+  "description": "웹 포즈 카탈로그/PNG를 안드로이드 assets로 변환",
+  "devDependencies": {
+    "sharp": "0.33.5"
+  }
+}

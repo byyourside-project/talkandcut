@@ -6,6 +6,8 @@ import com.byyourside.talkandcut.filter.MoodMode
 import com.byyourside.talkandcut.filter.MoodResult
 import com.byyourside.talkandcut.frame.LayoutId
 import com.byyourside.talkandcut.frame.Layouts
+import com.byyourside.talkandcut.pose.PoseCatalog
+import com.byyourside.talkandcut.pose.PosePlanner
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -38,10 +40,11 @@ interface BoothSounds {
 class Booth<Shot>(
     private val scope: CoroutineScope,
     private val camera: CaptureSource<Shot>,
+    private val poses: PoseCatalog,
     private val sounds: BoothSounds = BoothSounds.None,
 ) : BoothController {
 
-    private val _state = MutableStateFlow(BoothState<Shot>())
+    private val _state = MutableStateFlow(BoothState<Shot>(plan = PosePlanner.recommendPlan(poses.poses(1), null)))
     val state: StateFlow<BoothState<Shot>> = _state.asStateFlow()
 
     private var countdownJob: Job? = null
@@ -146,14 +149,34 @@ class Booth<Shot>(
 
     override fun restart(): String {
         resetSession()
-        return "새로 시작할게요."
+        return "새로 시작할게요. 첫 번째는 ${s.currentPose?.name}"
     }
 
     fun resetSession() {
         shutterJob?.cancel()
         shutterJob = null
         cancelCountdown()
-        _state.update { BoothState(layout = it.layout, cameraOn = it.cameraOn) }
+        // 웹 resetSession: 보정 끄기 + 인원 1명으로 다시 추천
+        _state.update {
+            BoothState(layout = it.layout, cameraOn = it.cameraOn, plan = PosePlanner.recommendPlan(poses.poses(1), null))
+        }
+    }
+
+    // ---------- 포즈 ----------
+
+    override fun setHeadcount(count: Int): String {
+        val n = count.coerceIn(1, 4)
+        _state.update {
+            it.copy(headcount = n, plan = PosePlanner.recommendPlan(poses.poses(n), it.moodId), pick = List(BoothState.CUTS) { 0 })
+        }
+        return "${n}명에 맞춰 포즈를 골랐어요"
+    }
+
+    override fun poseNext(): String {
+        val i = s.currentIndex
+        if (i < 0) return "네 컷을 다 찍었어요"
+        _state.update { st -> st.copy(pick = st.pick.toMutableList().also { it[i]++ }) }
+        return "그럼 ${s.currentPose?.name} 어때요"
     }
 
     // ---------- 보정 ----------
@@ -167,7 +190,16 @@ class Booth<Shot>(
         } else {
             s.moodId ?: EmotionInterpreter.nearestMood(after)
         }
+        val prevMood = s.moodId
         _state.update { it.copy(params = after, moodId = moodId) }
+        if (moodId != prevMood) {
+            // 분위기가 바뀌면 아직 안 찍은 컷의 포즈를 분위기에 맞게 다시 고른다
+            _state.update { st ->
+                val fresh = PosePlanner.recommendPlan(poses.poses(st.headcount), moodId)
+                val plan = fresh.mapIndexed { i, list -> if (st.shots[i] != null) st.plan.getOrElse(i) { list } else list }
+                st.copy(plan = plan, pick = List(BoothState.CUTS) { 0 })
+            }
+        }
         return EmotionInterpreter.explain(result, before, after)
     }
 

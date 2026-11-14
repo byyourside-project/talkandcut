@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -110,13 +111,14 @@ fun CameraScreen(viewModel: BoothViewModel) {
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 Countdown(state.countdown)
             }
-            Text(
-                text = state.reply,
-                color = Color.White,
-                fontSize = 16.sp,
-                style = shadowText,
-                modifier = Modifier.fillMaxWidth().padding(20.dp),
-            )
+            Column(Modifier.fillMaxWidth().padding(20.dp)) {
+                state.currentPose?.let { pose ->
+                    Text(pose.name, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, style = shadowText)
+                    Text(pose.tip, color = Color.White.copy(alpha = 0.85f), fontSize = 14.sp, style = shadowText)
+                    Spacer(Modifier.height(8.dp))
+                }
+                Text(text = state.reply, color = Color.White, fontSize = 16.sp, style = shadowText)
+            }
         }
     }
 
@@ -155,7 +157,13 @@ private fun Viewfinder(state: BoothState<*>, previewView: GLSurfaceView) {
         val aspect = Layouts.cellAspect(state.layout).toFloat()
         val w = minOf(maxWidth, maxHeight * aspect)
         val h = w / aspect
-        AndroidView(factory = { previewView }, modifier = Modifier.size(w, h))
+        Box(Modifier.size(w, h)) {
+            AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
+            val pose = state.currentPose
+            if (pose != null && state.cameraOn && !state.shutterOn) {
+                PoseGuideOverlay(state.headcount, pose, aspect.toDouble())
+            }
+        }
     }
 }
 

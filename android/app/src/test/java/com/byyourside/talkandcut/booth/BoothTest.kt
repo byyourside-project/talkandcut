@@ -4,6 +4,8 @@ import com.byyourside.talkandcut.filter.EmotionInterpreter
 import com.byyourside.talkandcut.filter.Param
 import com.byyourside.talkandcut.filter.moodById
 import com.byyourside.talkandcut.frame.LayoutId
+import com.byyourside.talkandcut.pose.PosePlanner
+import com.byyourside.talkandcut.pose.TestPoses
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -19,7 +21,7 @@ class BoothTest {
     private var counter = 0
 
     private fun TestScope.booth(): Booth<String> =
-        Booth<String>(this, { "shot${counter++}" }).also { it.setCameraOn(true) }
+        Booth<String>(this, { "shot${counter++}" }, TestPoses.catalog).also { it.setCameraOn(true) }
 
     @Test
     fun fourShotsInOrderThenDone() = runTest {
@@ -129,7 +131,8 @@ class BoothTest {
         b.setLayout(LayoutId.STRIP)
         repeat(2) { b.requestCapture(0); advanceUntilIdle() }
         b.requestCapture(3)
-        assertEquals("새로 시작할게요.", b.restart())
+        val first = PosePlanner.recommendPlan(TestPoses.catalog.poses(1), null)[0][0].name
+        assertEquals("새로 시작할게요. 첫 번째는 $first", b.restart())
         advanceUntilIdle()
         val s = b.state.value
         assertEquals(List(4) { null }, s.shots)
@@ -176,8 +179,51 @@ class BoothTest {
     }
 
     @Test
+    fun headcountReplansAndPoseNextCycles() = runTest {
+        val b = booth()
+        assertEquals(1, b.state.value.headcount)
+        assertEquals("3명에 맞춰 포즈를 골랐어요", b.setHeadcount(3))
+        val plan3 = PosePlanner.recommendPlan(TestPoses.catalog.poses(3), null)
+        assertEquals(plan3, b.state.value.plan)
+        assertEquals(plan3[0][1].name.let { "그럼 $it 어때요" }, b.poseNext())
+        assertEquals(plan3[0][1], b.state.value.currentPose)
+        assertEquals("4명에 맞춰 포즈를 골랐어요", b.setHeadcount(9))
+    }
+
+    @Test
+    fun poseFollowsCurrentCutAndRetake() = runTest {
+        val b = booth()
+        val plan = b.state.value.plan
+        b.requestCapture(0); advanceUntilIdle()
+        assertEquals(plan[1][0], b.state.value.currentPose)
+        b.retake(0, 3)
+        assertEquals(plan[0][0], b.state.value.currentPose)
+        b.cancelCapture()
+        repeat(3) { b.requestCapture(0); advanceUntilIdle() }
+        assertNull(b.state.value.currentPose)
+        assertEquals("네 컷을 다 찍었어요", b.poseNext())
+    }
+
+    @Test
+    fun moodChangeReplansOnlyUnshotCuts() = runTest {
+        val b = booth()
+        b.setHeadcount(2)
+        b.requestCapture(0); advanceUntilIdle()
+        val shotPlan = b.state.value.plan[0]
+        b.applyFilter(EmotionInterpreter.moodChip(moodById("chic")!!))
+        val chic = PosePlanner.recommendPlan(TestPoses.catalog.poses(2), "chic")
+        assertEquals(shotPlan, b.state.value.plan[0])
+        assertEquals(chic.drop(1), b.state.value.plan.drop(1))
+        // 같은 분위기에서 조금 더 → 다시 추천하지 않는다
+        b.poseNext()
+        val pick = b.state.value.pick
+        b.applyFilter(EmotionInterpreter.nudge(moodById("chic")!!, less = false))
+        assertEquals(pick, b.state.value.pick)
+    }
+
+    @Test
     fun failedCaptureKeepsCutEmpty() = runTest {
-        val b = Booth<String>(this, { null }).also { it.setCameraOn(true) }
+        val b = Booth<String>(this, { null }, TestPoses.catalog).also { it.setCameraOn(true) }
         b.requestCapture(0); advanceUntilIdle()
         assertNull(b.state.value.shots[0])
         assertFalse(b.state.value.shutterOn)

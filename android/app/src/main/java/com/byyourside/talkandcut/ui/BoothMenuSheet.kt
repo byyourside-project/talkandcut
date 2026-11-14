@@ -28,7 +28,7 @@ import com.byyourside.talkandcut.filter.moodById
 import com.byyourside.talkandcut.frame.LayoutId
 import com.byyourside.talkandcut.frame.Layouts
 
-/** 오른쪽 위 메뉴. 음성 명령과 같은 Command를 만든다. 촬영·보정·레이아웃. */
+/** 오른쪽 위 메뉴. 음성 명령과 같은 Command를 만든다. 촬영·포즈·보정·레이아웃. */
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun BoothMenuSheet(
@@ -71,6 +71,21 @@ fun BoothMenuSheet(
                         ) { Text("${i + 1}번째 컷") }
                     }
                 }
+            }
+
+            Section("포즈")
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                (1..4).forEach { n ->
+                    FilterChip(
+                        selected = state.headcount == n,
+                        onClick = { onCommand(Command.Headcount(n)) },
+                        label = { Text("${n}명") },
+                    )
+                }
+                OutlinedButton(
+                    onClick = { onCommand(Command.PoseNext) },
+                    enabled = state.currentIndex >= 0,
+                ) { Text("다른 포즈") }
             }
 
             Section("보정")
