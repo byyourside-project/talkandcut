@@ -14,3 +14,4 @@ dependencyResolutionManagement {
 }
 rootProject.name = "TalkAndCut"
 include(":app")
+include(":uvc")

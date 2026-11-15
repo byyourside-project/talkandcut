@@ -25,7 +25,10 @@ object RuleInterpreter : CommandInterpreter {
     }
 
     fun normalize(text: String): String =
-        text.replace(Regex("[.,!?~]"), " ").replace(Regex("\\s+"), " ").trim()
+        text.replace(Regex("[찍직]\\s*어\\s*줘"), "찍어줘")
+            .replace(Regex("찍\\s+어"), "찍어")
+            .replace(Regex("바\\s+로"), "바로")
+            .replace(Regex("[.,!?~]"), " ").replace(Regex("\\s+"), " ").trim()
 
     private val CAPTURE = Regex("찍어|찍자|찍을래|찍어줘|찍어 줘|촬영|찰칵|치즈|김치|셔터|찍기")
     private val RETAKE = Regex("다시\\s?찍|재촬영|다시\\s?촬영|다시 해|다시할래")

@@ -1,5 +1,11 @@
 package com.byyourside.talkandcut.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.width
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -32,13 +38,12 @@ import com.byyourside.talkandcut.voice.VoiceSession
 fun BoothMenuSheet(
     state: BoothState<*>,
     voice: VoiceSession,
+    devices: com.byyourside.talkandcut.devices.DeviceSettings,
+    model: com.byyourside.talkandcut.command.Team4Interpreter,
     onCommand: (Command) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
-    ) {
+    ResponsiveMenuSheet(onDismiss) {
         Column(
             Modifier
                 .fillMaxWidth()
@@ -49,6 +54,12 @@ fun BoothMenuSheet(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             val canShoot = state.cameraOn && !state.busy && state.currentIndex >= 0
+
+            DeviceMenuGroup(devices, enabled = !state.busy && !state.counting,
+                onMicrophoneChanged = { voice.stop(); voice.start() },
+                onSpeakerChanged = { voice.stop(); voice.start() })
+
+            Team4MenuGroup(model)
 
             VoiceMenuGroup(voice, onClose = onDismiss)
 
@@ -116,4 +127,23 @@ fun BoothMenuSheet(
             }
         }
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ResponsiveMenuSheet(onDismiss: () -> Unit, content: @Composable () -> Unit) {
+    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+    val wide = configuration.screenWidthDp >= 840 && configuration.screenWidthDp > configuration.screenHeightDp
+    if (wide) {
+        androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss,
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+            androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
+                androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.5f))
+                    .clickable(onClick = onDismiss))
+                androidx.compose.material3.Surface(Modifier.align(androidx.compose.ui.Alignment.CenterEnd)
+                    .width(420.dp).fillMaxHeight(), tonalElevation = 8.dp) { content() }
+            }
+        }
+    } else ModalBottomSheet(onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) { content() }
 }

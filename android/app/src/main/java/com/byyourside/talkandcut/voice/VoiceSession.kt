@@ -14,6 +14,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.buildJsonObject
@@ -45,6 +47,7 @@ class VoiceSession(
 
     private var speakJob: Job? = null
     private var speakSeq = 0
+    private val commandMutex = Mutex()
 
     /** 인식 문장과 비동기 안내를 받기 시작한다. */
     fun bind() {
@@ -80,7 +83,9 @@ class VoiceSession(
         if (t.isNotEmpty()) scope.launch { handleUtterance(t) }
     }
 
-    suspend fun handleUtterance(text: String) {
+    suspend fun handleUtterance(text: String) = commandMutex.withLock { handleSerialized(text) }
+
+    private suspend fun handleSerialized(text: String) {
         val s = state.value
         if (s.shutterOn) return
         var actions = interpreter.interpret(text, BoothContext.of(s))
@@ -96,12 +101,25 @@ class VoiceSession(
             kotlinx.serialization.json.JsonObject.serializer(),
             buildJsonObject {
                 put("heard", text)
+                (interpreter as? com.byyourside.talkandcut.command.InterpreterFeedback)?.let {
+                    put("interpreter", it.interpreterName)
+                    put("model_output", it.rawOutput)
+                }
                 put("actions", JsonArray(actions.map(CommandJson::toJson)))
             },
         )
         if (actions.isEmpty()) {
-            reply("잘 못 알아들었어요. “찍어줘”나 “따뜻하게”처럼 말해 보세요")
+            reply((interpreter as? com.byyourside.talkandcut.command.InterpreterFeedback)?.explanation
+                ?: "잘 못 알아들었어요. “찍어줘”나 “따뜻하게”처럼 말해 보세요")
             return
+        }
+        if (actions.any { it is Command.Capture }) {
+            val latest = state.value
+            if (s.busy || !s.cameraOn || s.resultOpen || s.currentIndex < 0 ||
+                !latest.cameraOn || latest.busy || latest.resultOpen || latest.currentIndex < 0) {
+                booth.reply("카메라가 촬영 준비 상태일 때 말해 주세요.")
+                return
+            }
         }
         val msgs = actions.map { executor.execute(it) }.filter { it.isNotEmpty() }
         if (msgs.isNotEmpty()) {

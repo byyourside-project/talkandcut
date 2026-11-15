@@ -7,14 +7,13 @@ import androidx.lifecycle.viewModelScope
 import com.byyourside.talkandcut.command.RuleInterpreter
 import com.byyourside.talkandcut.frame.ResultRenderer
 import com.byyourside.talkandcut.pose.PoseCatalog
-import com.byyourside.talkandcut.voice.AndroidRecognition
 import com.byyourside.talkandcut.voice.AndroidSpeechOutput
-import com.byyourside.talkandcut.voice.VoiceEngine
 import com.byyourside.talkandcut.voice.VoiceSession
 import kotlinx.coroutines.flow.StateFlow
 
 /** 촬영 화면의 상태를 전부 들고 있는 ViewModel. 로직은 [Booth]에 있다. */
 class BoothViewModel(app: Application) : AndroidViewModel(app) {
+    val devices = com.byyourside.talkandcut.devices.DeviceSettings(app)
     private var camera: CaptureSource<Bitmap>? = null
     private var sounds: BoothSounds = BoothSounds.None
 
@@ -35,14 +34,16 @@ class BoothViewModel(app: Application) : AndroidViewModel(app) {
 
     val state: StateFlow<BoothState<Bitmap>> = booth.state
 
-    private val speech = AndroidSpeechOutput(app)
+    private val speech = AndroidSpeechOutput(app, devices)
+    val team4 = com.byyourside.talkandcut.command.Team4Interpreter(app, viewModelScope)
+    val offlineSpeech = com.byyourside.talkandcut.voice.OfflineSpeechInput(app, devices, viewModelScope) { team4.awaitPreparation() }
 
-    /** 음성: SpeechRecognizer → RuleInterpreter → CommandExecutor, 안내는 TextToSpeech. */
+    /** 음성: USB/AudioRecord → Silero VAD → Whisper → 명령 실행. 안내는 TextToSpeech. */
     val voice = VoiceSession(
         scope = viewModelScope,
-        input = VoiceEngine(viewModelScope, AndroidRecognition.isAvailable(app), { AndroidRecognition(app) }),
+        input = offlineSpeech,
         output = speech,
-        interpreter = RuleInterpreter,
+        interpreter = team4,
         booth = booth,
         state = booth.state,
         announcements = booth.announcements,
@@ -65,7 +66,10 @@ class BoothViewModel(app: Application) : AndroidViewModel(app) {
 
     override fun onCleared() {
         voice.stop()
+        offlineSpeech.release()
         speech.release()
         result.release()
+        devices.release()
+        team4.close()
     }
 }

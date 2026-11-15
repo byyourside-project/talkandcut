@@ -1,0 +1,57 @@
+{
+  "target": "QCS6490",
+  "dsp_arch": "v68",
+  "soc_id": 93,
+  "context_bytes": 1527857152,
+  "context_sha256": "0614146a2d06be3f3e193bbab71749146f475933ef2ef457802937b3ea50dd7a",
+  "precision_policy": {
+    "base": "w8a16",
+    "projection_weight_bits": 8,
+    "normalizer_weight_bits": 8,
+    "matmul_rhs_bits": 8,
+    "logits_bits": 8
+  },
+  "model_profile": {
+    "id": "team4",
+    "name": "7반4팀 음성 촬영",
+    "source": "/data/hwayeon/qcs6490/7반4팀/Llama-3.2-1B-Instruct-TalkCut-v3.0-FP16",
+    "training_data": "/data/hwayeon/qcs6490/7반4팀/dataset_v3.0/train.jsonl",
+    "evaluation_data": "/data/hwayeon/qcs6490/7반4팀/dataset_v3.0/eval.jsonl",
+    "vocab_size": 128264,
+    "bos_token_id": 128000,
+    "pad_token_id": 128009,
+    "eos_token_ids": [
+      128263,
+      128001,
+      128008,
+      128009
+    ],
+    "max_new_tokens": 48,
+    "added_tokens": {
+      "<maum_0>": 128256,
+      "<maum_1>": 128257,
+      "<maum_2>": 128258,
+      "<maum_3>": 128259,
+      "<maum_4>": 128260,
+      "<maum_5>": 128261,
+      "<maum_6>": 128262,
+      "<maum_end>": 128263
+    },
+    "prompt_prefix": "<|start_header_id|>system<|end_header_id|>\n\nCutting Knowledge Date: December 2023\nToday Date: 26 Jul 2024\n\n사용자 발화를 현재 단계와 이전 질문 및 처리 전 저장 상태에 비추어 판단하라. 출력은 함수 토큰 하나로 제한한다.\n함수: <maum_0>(count=값)<maum_end> 인원 확인; <maum_1>(relation=값)<maum_end> 관계 확인; <maum_2>(concept=값)<maum_end> 컨셉 확인; <maum_3>(mode=값)<maum_end> 포즈 추천; <maum_4>(mode=값)<maum_end> 필터 추천; <maum_5>(mode=값)<maum_end> 프레임 추천.\ncount: 1~4 인원, 0 불명확하여 재질문, -1 지원범위 밖. 명시적으로 사람이 없다는 영 명도 범위 밖이다.\nrelation: 0 미확인, 1 개인 촬영, 2 교제 중인 커플, 3 친구, 4 가족, 5 동료, 6 기타, 7 비공개. 배우자와 친척은 가족으로 분류한다.\nconcept: 0 미확인, 1 로맨틱, 2 코믹, 3 감동, 4 시크, 5 활기참, 6 귀여움, 7 깔끔함, 8 따뜻함, 9 상관없음.\nmode: 1 최초 추천, 2 다른 후보 재추천. 재추천은 요청 대상 기능의 추천 이력을 참조한다.\n명시적으로 요청한 기능은 현재 화면 단계보다 우선한다. 대상이 생략되면 현재 단계와 이전 질문을 참조한다.\n인원이나 행사에서 관계와 컨셉을 추정하지 않는다. 관계와 컨셉은 독립된 항목이다. 예쁘게 멋있게 등 근거가 부족한 분위기는 구체화 질문을 한다. 정정 또는 부정문의 최종 선택을 따른다.\n포즈 요청은 인원 관계 컨셉 순서로 첫 누락 항목의 확인 함수 값 0을 출력한다. 필터와 프레임은 컨셉 누락을 확인한다. 비공개와 상관없음은 정상 선택이다. 확인 함수 0과 범위 밖 응답은 저장값을 임의로 지우지 않는다.\n이 데이터의 범위는 한 번의 함수 호출로 처리할 수 있는 요청이다. 설명문이나 후보 ID를 정답에 붙이지 않는다.\n\n음성 촬영 추가 규칙: <maum_6>(action=값)<maum_end>는 capture_photo(action:int) 함수다. action=1 촬영 요청, 0 새 촬영 안 함, 2 촬영 의도 재확인이다.\nstate.camera_status는 preview(촬영 준비), ready(촬영 가능), countdown(이미 카운트다운 중), capturing(촬영 처리 중), review(결과 확인), error(오류)다. voice_capture_enabled는 음성 촬영 활성화 여부다.\n음성 촬영은 camera_status=ready이고 voice_capture_enabled=true일 때만 action=1 또는 2를 허용한다. 다른 상태에서는 촬영 요청이라도 action=0을 출력한다. 이 차단 규칙은 촬영 함수에만 적용하며 명시적인 다른 기능 요청을 촬영 함수로 바꾸지 않는다.\n촬영 가능 상태에서 치즈·찰칵·브이·스마일·김치 단독 구호와 분명한 촬영 명령은 action=1이다. 촬영 부정·보류, 명령어 인용·연습·단순 언급·설명 질문은 action=0이다. 촬영 명령인지 불명확한 짧은 반응은 음성 촬영 단계에서 action=2로 확인한다. 단순 준비 안내 뒤의 응·좋아·오케이는 재확인한다. 단, 이전 AI 질문이 지금 촬영할까요처럼 즉시 촬영 여부를 명확히 묻는 경우 긍정 응답은 action=1, 거절은 action=0이다.\n브이 포즈 추천해줘처럼 다른 기능을 명시한 요청은 그 기능으로 처리한다. 부정·정정은 마지막 확정 의도를 따른다. 미래 조건부 촬영 예약은 이 데이터 범위에 없다.\naction=0은 새 촬영을 시작하지 않는다는 뜻이며 진행 중인 카운트다운 취소 API가 아니다. action=1도 실제 촬영 완료를 의미하지 않는다. 앱은 실행 직전에 최신 상태와 활성화 여부를 다시 확인하고 같은 명령의 중복 실행을 막는다.\n음성 촬영의 인원·관계·컨셉 및 추천 이력은 변경하지 않는다. 가상 이력 ID를 생성하거나 후보 선택을 정답에 넣지 않는다.<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n",
+    "prompt_suffix": "<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n",
+    "smoke_queries": [
+      "{\"stage\": \"음성 촬영\", \"previous_question\": \"촬영 준비가 끝났어요 치즈 찰칵 브이 스마일 김치 또는 찍어줘라고 말해주세요\", \"state\": {\"people\": 2, \"relation\": \"동료\", \"concept\": \"시크\", \"recommendation_history\": {\"pose\": [\"POSE_REF_01\"], \"filter\": [\"FILTER_REF_01\"], \"frame\": [\"FRAME_REF_01\"]}, \"camera_status\": \"ready\", \"voice_capture_enabled\": true}, \"utterance\": \"지금 촬영해줘\"}",
+      "{\"stage\": \"인원수 확인\", \"previous_question\": \"한 번에 촬영할 인원이 다섯 명이라는 뜻인가요\", \"state\": {\"people\": 0, \"relation\": \"미확인\", \"concept\": \"미확인\", \"recommendation_history\": {\"pose\": [], \"filter\": [], \"frame\": []}, \"camera_status\": \"preview\", \"voice_capture_enabled\": false}, \"utterance\": \"그 항목을 고른 걸로 보면 돼\"}",
+      "{\"stage\": \"인원수 확인\", \"previous_question\": \"카메라에 나오는 인원은 한 명으로 확정할까요\", \"state\": {\"people\": 0, \"relation\": \"미확인\", \"concept\": \"미확인\", \"recommendation_history\": {\"pose\": [], \"filter\": [], \"frame\": []}, \"camera_status\": \"preview\", \"voice_capture_enabled\": false}, \"utterance\": \"방금 제시한 내용에 동의합니다\"}"
+    ],
+    "system_prompt": "사용자 발화를 현재 단계와 이전 질문 및 처리 전 저장 상태에 비추어 판단하라. 출력은 함수 토큰 하나로 제한한다.\n함수: <maum_0>(count=값)<maum_end> 인원 확인; <maum_1>(relation=값)<maum_end> 관계 확인; <maum_2>(concept=값)<maum_end> 컨셉 확인; <maum_3>(mode=값)<maum_end> 포즈 추천; <maum_4>(mode=값)<maum_end> 필터 추천; <maum_5>(mode=값)<maum_end> 프레임 추천.\ncount: 1~4 인원, 0 불명확하여 재질문, -1 지원범위 밖. 명시적으로 사람이 없다는 영 명도 범위 밖이다.\nrelation: 0 미확인, 1 개인 촬영, 2 교제 중인 커플, 3 친구, 4 가족, 5 동료, 6 기타, 7 비공개. 배우자와 친척은 가족으로 분류한다.\nconcept: 0 미확인, 1 로맨틱, 2 코믹, 3 감동, 4 시크, 5 활기참, 6 귀여움, 7 깔끔함, 8 따뜻함, 9 상관없음.\nmode: 1 최초 추천, 2 다른 후보 재추천. 재추천은 요청 대상 기능의 추천 이력을 참조한다.\n명시적으로 요청한 기능은 현재 화면 단계보다 우선한다. 대상이 생략되면 현재 단계와 이전 질문을 참조한다.\n인원이나 행사에서 관계와 컨셉을 추정하지 않는다. 관계와 컨셉은 독립된 항목이다. 예쁘게 멋있게 등 근거가 부족한 분위기는 구체화 질문을 한다. 정정 또는 부정문의 최종 선택을 따른다.\n포즈 요청은 인원 관계 컨셉 순서로 첫 누락 항목의 확인 함수 값 0을 출력한다. 필터와 프레임은 컨셉 누락을 확인한다. 비공개와 상관없음은 정상 선택이다. 확인 함수 0과 범위 밖 응답은 저장값을 임의로 지우지 않는다.\n이 데이터의 범위는 한 번의 함수 호출로 처리할 수 있는 요청이다. 설명문이나 후보 ID를 정답에 붙이지 않는다.\n\n음성 촬영 추가 규칙: <maum_6>(action=값)<maum_end>는 capture_photo(action:int) 함수다. action=1 촬영 요청, 0 새 촬영 안 함, 2 촬영 의도 재확인이다.\nstate.camera_status는 preview(촬영 준비), ready(촬영 가능), countdown(이미 카운트다운 중), capturing(촬영 처리 중), review(결과 확인), error(오류)다. voice_capture_enabled는 음성 촬영 활성화 여부다.\n음성 촬영은 camera_status=ready이고 voice_capture_enabled=true일 때만 action=1 또는 2를 허용한다. 다른 상태에서는 촬영 요청이라도 action=0을 출력한다. 이 차단 규칙은 촬영 함수에만 적용하며 명시적인 다른 기능 요청을 촬영 함수로 바꾸지 않는다.\n촬영 가능 상태에서 치즈·찰칵·브이·스마일·김치 단독 구호와 분명한 촬영 명령은 action=1이다. 촬영 부정·보류, 명령어 인용·연습·단순 언급·설명 질문은 action=0이다. 촬영 명령인지 불명확한 짧은 반응은 음성 촬영 단계에서 action=2로 확인한다. 단순 준비 안내 뒤의 응·좋아·오케이는 재확인한다. 단, 이전 AI 질문이 지금 촬영할까요처럼 즉시 촬영 여부를 명확히 묻는 경우 긍정 응답은 action=1, 거절은 action=0이다.\n브이 포즈 추천해줘처럼 다른 기능을 명시한 요청은 그 기능으로 처리한다. 부정·정정은 마지막 확정 의도를 따른다. 미래 조건부 촬영 예약은 이 데이터 범위에 없다.\naction=0은 새 촬영을 시작하지 않는다는 뜻이며 진행 중인 카운트다운 취소 API가 아니다. action=1도 실제 촬영 완료를 의미하지 않는다. 앱은 실행 직전에 최신 상태와 활성화 여부를 다시 확인하고 같은 명령의 중복 실행을 막는다.\n음성 촬영의 인원·관계·컨셉 및 추천 이력은 변경하지 않는다. 가상 이력 ID를 생성하거나 후보 선택을 정답에 넣지 않는다.",
+    "context_length": 2048,
+    "hidden_size": 2048,
+    "num_hidden_layers": 16,
+    "head_dim": 64,
+    "working_model_directory": "team4_1b",
+    "base_model": "meta-llama/Llama-3.2-1B-Instruct",
+    "template_date": "26 Jul 2024",
+    "template_date_note": "제공 jinja의 날짜 미지정 기본값으로 고정"
+  }
+}

@@ -15,6 +15,7 @@ android {
         targetSdk = 36
         versionCode = 1
         versionName = "0.1.0"
+        ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a") }
     }
 
     buildTypes {
@@ -35,9 +36,15 @@ android {
     testOptions {
         unitTests.isReturnDefaultValues = true
     }
+    androidResources { noCompress += "onnx" }
+    packaging { jniLibs { useLegacyPackaging = true } }
+    sourceSets["main"].assets.srcDir("../third-party")
 }
 
 dependencies {
+    implementation("net.java.dev.jna:jna:5.17.0@aar")
+    implementation(files("libs/sherpa-onnx-2.0.1.aar"))
+    implementation(project(":uvc"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)

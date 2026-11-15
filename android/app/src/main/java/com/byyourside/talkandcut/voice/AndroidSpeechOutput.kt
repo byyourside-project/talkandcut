@@ -12,7 +12,8 @@ import kotlin.coroutines.Continuation
 import kotlin.coroutines.resume
 
 /** TextToSpeech 한국어, 속도 1.1(웹 SpeechSynthesisUtterance rate). say는 다 읽을 때까지 기다린다. */
-class AndroidSpeechOutput(context: Context) : SpeechOutput {
+class AndroidSpeechOutput(private val context: Context, private val devices: com.byyourside.talkandcut.devices.DeviceSettings) : SpeechOutput {
+    private var player: android.media.MediaPlayer? = null
     private val ready = CompletableDeferred<Boolean>()
     private val waiting = ConcurrentHashMap<String, Continuation<Unit>>()
     private var seq = 0
@@ -46,6 +47,32 @@ class AndroidSpeechOutput(context: Context) : SpeechOutput {
             configured = true
         }
         val id = "u${++seq}"
+        if (devices.state.value.speaker.isNotEmpty()) {
+            val file = java.io.File.createTempFile("speech", ".wav", context.cacheDir)
+            try {
+                suspendCancellableCoroutine<Unit> { cont ->
+                    waiting[id] = cont
+                    cont.invokeOnCancellation { waiting.remove(id); tts.stop() }
+                    if (tts.synthesizeToFile(text, null, file, id) != TextToSpeech.SUCCESS) finish(id)
+                }
+                if (file.length() > 44) suspendCancellableCoroutine<Unit> { cont ->
+                    val media = android.media.MediaPlayer()
+                    player = media
+                    cont.invokeOnCancellation { runCatching { media.release() }; player = null }
+                    fun done() { if (player === media) { player = null; media.release() }; if (cont.isActive) cont.resume(Unit) }
+                    runCatching {
+                        media.setAudioAttributes(android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_MEDIA).build())
+                        media.setDataSource(file.path)
+                        check(media.setPreferredDevice(devices.speaker()))
+                        media.setOnCompletionListener { done() }
+                        media.setOnErrorListener { _, _, _ -> done(); true }
+                        media.setOnPreparedListener { it.start() }
+                        media.prepareAsync()
+                    }.onFailure { done() }
+                }
+            } finally { file.delete() }
+            return
+        }
         suspendCancellableCoroutine { cont ->
             waiting[id] = cont
             cont.invokeOnCancellation {
@@ -57,6 +84,8 @@ class AndroidSpeechOutput(context: Context) : SpeechOutput {
     }
 
     override fun cancel() {
+        player?.let { runCatching { it.release() } }
+        player = null
         tts.stop()
         // stop()은 onStop을 부르지 않는 엔진도 있어서 기다리는 쪽을 직접 풀어 준다
         waiting.keys.toList().forEach(::finish)

@@ -6,3 +6,12 @@ build/
 .kotlin/
 captures/
 /tools/node_modules/
+/.speech-download/
+/.team4-download/
+/app/libs/sherpa-onnx-2.0.1.aar
+/app/src/main/assets/speech/model.int8.onnx
+/app/src/main/assets/speech/silero_vad.onnx
+/app/src/main/assets/speech/whisper-small/*.onnx
+/app/src/main/jniLibs/arm64-v8a/
+/app/src/main/assets/team4/libQnnHtpV68Skel.so
+/app/src/main/assets/team4/tokenizer.json

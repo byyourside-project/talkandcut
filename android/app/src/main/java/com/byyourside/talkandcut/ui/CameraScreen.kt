@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -69,16 +70,26 @@ internal val shadowText = TextStyle(shadow = Shadow(Color.Black.copy(alpha = 0.6
 
 @Composable
 fun CameraScreen(viewModel: BoothViewModel) {
+    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+    val wide = configuration.screenWidthDp >= 840 && configuration.screenWidthDp > configuration.screenHeightDp
     val state by viewModel.state.collectAsStateWithLifecycle()
+    val modelBusy by viewModel.team4.busy.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
-    val camera = remember { CameraController(context) }
-    val preview = remember { GlPreview(context, camera) { viewModel.setCameraOn(true) } }
+    val devices by viewModel.devices.state.collectAsStateWithLifecycle()
+    val camera = remember(devices.camera, devices.cameras) { CameraController(context, viewModel.devices, devices.camera) }
+    val preview = remember(camera) { GlPreview(context, camera) { viewModel.setCameraOn(true) } }
     var menuOpen by remember { mutableStateOf(false) }
+    var cameraError by remember { mutableStateOf<String?>(null) }
 
-    DisposableEffect(lifecycleOwner) {
-        val sounds = AndroidBoothSounds()
-        camera.bind(lifecycleOwner)
+    DisposableEffect(lifecycleOwner, camera) {
+        cameraError = null
+        viewModel.setCameraOn(false)
+        val sounds = AndroidBoothSounds(viewModel.devices)
+        camera.bind(lifecycleOwner) { message ->
+            cameraError = message
+            viewModel.setCameraOn(false)
+        }
         viewModel.attach(camera, sounds)
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
@@ -106,7 +117,7 @@ fun CameraScreen(viewModel: BoothViewModel) {
     SideEffect { preview.renderer.params = state.params }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
-        Viewfinder(state, preview.view)
+        androidx.compose.runtime.key(camera, wide) { Viewfinder(state, preview.view, wide) }
 
         // 셔터 플래시
         val flash by animateFloatAsState(
@@ -118,7 +129,17 @@ fun CameraScreen(viewModel: BoothViewModel) {
 
         Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
             TopBar(state, onMenu = { menuOpen = true })
-            VoiceBar(viewModel.voice)
+            VoiceBar(viewModel.voice, modifier = if (wide) Modifier.widthIn(max = 480.dp)
+                .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(12.dp)) else Modifier)
+            if (modelBusy) Text("AI가 명령을 판단하고 있어요…", color = Color(0xFFFFD54F),
+                modifier = Modifier.padding(horizontal = 20.dp))
+            cameraError?.let { message ->
+                Text(
+                    text = message,
+                    color = Color.White,
+                    modifier = Modifier.fillMaxWidth().background(Color(0xFF7F1D1D)).padding(16.dp),
+                )
+            }
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 Countdown(state.countdown)
             }
@@ -126,11 +147,11 @@ fun CameraScreen(viewModel: BoothViewModel) {
                 Thumbnail(viewModel, state) { viewModel.execute(Command.Result(true)) }
                 Column(Modifier.weight(1f)) {
                     state.currentPose?.let { pose ->
-                        Text(pose.name, color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold, style = shadowText)
-                        Text(pose.tip, color = Color.White.copy(alpha = 0.85f), fontSize = 14.sp, style = shadowText)
+                        Text(pose.name, color = Color.White, fontSize = if (wide) 24.sp else 18.sp, fontWeight = FontWeight.Bold, style = shadowText)
+                        Text(pose.tip, color = Color.White.copy(alpha = 0.85f), fontSize = if (wide) 17.sp else 14.sp, style = shadowText)
                         Spacer(Modifier.height(8.dp))
                     }
-                    Text(text = state.reply, color = Color.White, fontSize = 16.sp, style = shadowText)
+                    Text(text = state.reply, color = Color.White, fontSize = if (wide) 18.sp else 16.sp, style = shadowText)
                 }
             }
         }
@@ -140,6 +161,8 @@ fun CameraScreen(viewModel: BoothViewModel) {
         BoothMenuSheet(
             state = state,
             voice = viewModel.voice,
+            devices = viewModel.devices,
+            model = viewModel.team4,
             onCommand = { cmd ->
                 // 견본 고르기는 여러 번 눌러 보므로 메뉴를 닫지 않는다
                 if (cmd !is Command.Theme) menuOpen = false
@@ -190,13 +213,14 @@ private class GlPreview(context: Context, camera: CameraController, onFirstFrame
 
 /** 미리보기를 레이아웃 칸 비율(cellAspect)로 가운데 배치. 바깥은 어둡게 둔다. */
 @Composable
-private fun Viewfinder(state: BoothState<*>, previewView: GLSurfaceView) {
+private fun Viewfinder(state: BoothState<*>, previewView: GLSurfaceView, wide: Boolean) {
     BoxWithConstraints(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         val aspect = Layouts.cellAspect(state.layout).toFloat()
         val w = minOf(maxWidth, maxHeight * aspect)
         val h = w / aspect
-        Box(Modifier.size(w, h)) {
-            AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
+        if (wide) AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
+        Box(Modifier.size(w, h).then(if (wide) Modifier.border(1.dp, Color.White.copy(alpha = 0.3f)) else Modifier)) {
+            if (!wide) AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
             val pose = state.currentPose
             if (pose != null && state.cameraOn && !state.shutterOn) {
                 PoseGuideOverlay(state.headcount, pose, aspect.toDouble())

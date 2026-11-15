@@ -6,7 +6,7 @@ import kotlinx.coroutines.flow.StateFlow
 /** 웹 voice.js onState 상태 이름 그대로. */
 enum class VoiceState { OFF, CONNECTING, LISTENING, SPEAKING, DENIED, UNSUPPORTED, ERROR }
 
-/** 음성 인식 교체 지점(docs/mobile-port-plan.md 6장). 지금은 [VoiceEngine] + [AndroidRecognition]. */
+/** 음성 인식 교체 지점. 보드에서는 [OfflineSpeechInput]이 선택한 마이크와 한국어 모델을 직접 연결한다. */
 interface SpeechInput {
     val state: StateFlow<VoiceState>
 

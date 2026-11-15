@@ -76,7 +76,28 @@ fun VoiceBar(voice: VoiceSession, modifier: Modifier = Modifier) {
         }
         val status = VoiceTexts.status(s, reason)
         if (status.isNotEmpty() && s != VoiceState.OFF) {
-            Text(status, color = Color(0xFFFFCDD2), fontSize = 13.sp, style = shadowText)
+            Text(status, color = if (s == VoiceState.CONNECTING) Color(0xFFFFD54F) else Color(0xFFFFCDD2), fontSize = 13.sp, style = shadowText)
+        }
+        (voice.input as? com.byyourside.talkandcut.voice.OfflineSpeechInput)?.let { offline ->
+            val level by offline.level.collectAsStateWithLifecycle()
+            val device by offline.inputDevice.collectAsStateWithLifecycle()
+            val lastText by offline.lastText.collectAsStateWithLifecycle()
+            val decoding by offline.decoding.collectAsStateWithLifecycle()
+            val hearing by offline.hearing.collectAsStateWithLifecycle()
+            if (s == VoiceState.LISTENING) {
+                Text("한국어 오프라인 · $device", color = Color.White.copy(alpha = 0.75f), fontSize = 12.sp)
+                androidx.compose.material3.LinearProgressIndicator(progress = { level }, modifier = Modifier.fillMaxWidth())
+            }
+            Text(
+                when { decoding -> "말씀을 인식하고 있어요…"; hearing -> "말소리를 듣고 있어요…"; else -> "인식된 말" },
+                color = Color(0xFFFFD54F), fontSize = 12.sp,
+            )
+            Text(
+                text = lastText.ifEmpty { "아직 인식된 말이 없어요. “찍어줘”라고 말해 주세요." },
+                color = Color.White, fontSize = 15.sp, style = shadowText,
+                modifier = Modifier.fillMaxWidth().background(Color.Black.copy(alpha = 0.5f)).padding(8.dp),
+                maxLines = 3, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+            )
         }
     }
 }

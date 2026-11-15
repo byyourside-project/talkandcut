@@ -27,6 +27,13 @@ class RuleInterpreterTest {
         assertEquals(listOf("CAPTURE"), acts("치즈"))
     }
 
+    @Test fun handlesSyllableSpacesFromOfflineAsr() {
+        assertEquals(listOf(Command.Capture(0)), parse("바로 찍 어 줘"))
+        assertEquals(listOf(Command.Capture(3)), parse("찍 어 줘"))
+        assertEquals(listOf(Command.Capture(0)), parse("바 로 찍 어"))
+        assertEquals(listOf(Command.Capture(3)), parse("직어줘"))
+    }
+
     @Test
     fun poseMatchCapture() {
         assertEquals(listOf(Command.Capture(3, poseMatch = true)), parse("포즈 맞추면 찍어줘"))

@@ -48,10 +48,16 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val metrics = resources.displayMetrics
+        val longestDp = maxOf(metrics.widthPixels, metrics.heightPixels) / metrics.density
+        val shortestDp = minOf(metrics.widthPixels, metrics.heightPixels) / metrics.density
+        val monitor = resources.configuration.smallestScreenWidthDp >= 600 || (longestDp >= 900 && shortestDp >= 480)
+        requestedOrientation = if (monitor) android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            else android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         enableEdgeToEdge()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         WindowCompat.getInsetsController(window, window.decorView).apply {
-            hide(WindowInsetsCompat.Type.statusBars())
+            hide(if (monitor) WindowInsetsCompat.Type.systemBars() else WindowInsetsCompat.Type.statusBars())
             systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
         setContent {
@@ -73,7 +79,20 @@ class MainActivity : ComponentActivity() {
      */
     private fun handleDebugUtterance(intent: Intent?) {
         if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) return
+        if (intent?.getBooleanExtra("audio_probe", false) == true) viewModel.offlineSpeech.beginAudioProbe()
+        intent?.getStringExtra("benchmark_wave")?.let(viewModel.offlineSpeech::benchmarkWave)
         intent?.getStringExtra("utterance")?.let(viewModel.voice::typed)
+        intent?.getStringExtra("verify_wave")?.let { path ->
+            viewModel.offlineSpeech.verifyWave(path, if (intent.getBooleanExtra("verify_command", false)) viewModel.voice::typed else null,
+                intent.getBooleanExtra("verify_pipeline", false))
+        }
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && requestedOrientation == android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE) {
+            WindowCompat.getInsetsController(window, window.decorView).hide(WindowInsetsCompat.Type.systemBars())
+        }
     }
 }
 

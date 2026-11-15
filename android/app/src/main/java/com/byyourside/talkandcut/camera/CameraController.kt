@@ -32,10 +32,14 @@ import kotlin.math.roundToInt
  * 촬영은 ImageCapture. 찍은 사진은 미리보기와 똑같이 보이도록 회전·좌우반전한 뒤
  * 칸 비율로 가운데를 자른다(보정 전 원본).
  */
-class CameraController(context: Context) : CaptureSource<Bitmap> {
+class CameraController(context: Context, devices: com.byyourside.talkandcut.devices.DeviceSettings, private val selection: String) : CaptureSource<Bitmap> {
     private val appContext = context.applicationContext
     private val executor = ContextCompat.getMainExecutor(appContext)
-    private val providerFuture = ProcessCameraProvider.getInstance(appContext)
+    private val providerFuture by lazy { ProcessCameraProvider.getInstance(appContext) }
+    private val usbSource = devices.usbCameras().firstOrNull {
+        devices.usbKey(it) == selection || (selection.isEmpty() &&
+            runCatching { appContext.getSystemService(android.hardware.camera2.CameraManager::class.java).cameraIdList.isEmpty() }.getOrDefault(true))
+    }?.let { UsbCameraSource(appContext, it) }
 
     private fun selector(w: Int, h: Int) = ResolutionSelector.Builder()
         .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
@@ -50,23 +54,49 @@ class CameraController(context: Context) : CaptureSource<Bitmap> {
         .build()
 
     private var renderer: FilterRenderer? = null
+    private var bindingGeneration = 0
+    private var bound = false
 
-    fun bind(owner: LifecycleOwner) {
+    fun bind(owner: LifecycleOwner, onError: (String) -> Unit = {}) {
+        usbSource?.let { it.bind(owner, onError); return }
+        val generation = ++bindingGeneration
         providerFuture.addListener({
-            val provider = providerFuture.get()
-            provider.unbindAll()
-            provider.bindToLifecycle(owner, CameraSelector.DEFAULT_FRONT_CAMERA, preview, imageCapture)
+            if (generation != bindingGeneration) return@addListener
+            runCatching {
+                val provider = providerFuture.get()
+                provider.unbindAll()
+                val cameraSelector = if (selection.startsWith("camera:")) {
+                    CameraSelector.Builder().addCameraFilter { cameras -> cameras.filter {
+                        androidx.camera.camera2.interop.Camera2CameraInfo.from(it).cameraId == selection.removePrefix("camera:")
+                    } }.build()
+                } else if (provider.hasCamera(CameraSelector.DEFAULT_FRONT_CAMERA)) {
+                    CameraSelector.DEFAULT_FRONT_CAMERA
+                } else {
+                    // 보드의 USB 카메라는 전면 렌즈로 분류되지 않을 수 있다.
+                    CameraSelector.Builder().addCameraFilter { cameras -> cameras.take(1) }.build()
+                }
+                provider.bindToLifecycle(owner, cameraSelector, preview, imageCapture)
+                bound = true
+            }.onFailure {
+                bound = false
+                android.util.Log.e("CameraController", "Camera initialization failed", it)
+                onError("카메라를 연결할 수 없어요. 보드의 카메라 연결을 확인한 뒤 앱을 다시 열어 주세요.")
+            }
         }, executor)
     }
 
     fun unbind() {
+        usbSource?.let { it.release(); return }
+        bindingGeneration++
+        bound = false
         preview.setSurfaceProvider(null)
-        if (providerFuture.isDone) providerFuture.get().unbindAll()
+        if (providerFuture.isDone) runCatching { providerFuture.get().unbindAll() }
         renderer = null
     }
 
     /** FilterRenderer가 새 SurfaceTexture를 만들 때마다 카메라 미리보기를 연결한다. */
     fun attach(renderer: FilterRenderer, st: SurfaceTexture) {
+        usbSource?.let { it.attach(renderer, st); return }
         this.renderer = renderer
         preview.setSurfaceProvider(executor) { request ->
             val res = request.resolution
@@ -78,7 +108,11 @@ class CameraController(context: Context) : CaptureSource<Bitmap> {
         }
     }
 
-    override suspend fun capture(aspect: Double): Bitmap? = suspendCancellableCoroutine { cont ->
+    override suspend fun capture(aspect: Double): Bitmap? = if (usbSource != null) usbSource.capture(aspect) else suspendCancellableCoroutine { cont ->
+        if (!bound) {
+            cont.resume(null)
+            return@suspendCancellableCoroutine
+        }
         imageCapture.takePicture(executor, object : ImageCapture.OnImageCapturedCallback() {
             override fun onCaptureSuccess(image: ImageProxy) {
                 val result = runCatching { toShot(image, aspect) }.getOrNull()
@@ -128,20 +162,42 @@ class CameraController(context: Context) : CaptureSource<Bitmap> {
 }
 
 /** 카운트다운 비프(웹 beep(660))와 셔터음. */
-class AndroidBoothSounds : BoothSounds {
-    private val tone = runCatching { ToneGenerator(AudioManager.STREAM_MUSIC, 70) }.getOrNull()
-    private val shutterSound = MediaActionSound().apply { load(MediaActionSound.SHUTTER_CLICK) }
+class AndroidBoothSounds(private val devices: com.byyourside.talkandcut.devices.DeviceSettings) : BoothSounds {
+    private val tracks = mutableSetOf<android.media.AudioTrack>()
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+    private fun play(frequency: Double, durationMs: Int) {
+        runCatching {
+            val rate = 24000
+            val samples = ShortArray(rate * durationMs / 1000) { i ->
+                val envelope = minOf(1.0, i / 120.0, (rate * durationMs / 1000 - i) / 120.0)
+                (kotlin.math.sin(2 * Math.PI * frequency * i / rate) * 14000 * envelope).toInt().toShort()
+            }
+            val track = android.media.AudioTrack.Builder()
+                .setAudioAttributes(android.media.AudioAttributes.Builder().setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION).build())
+                .setAudioFormat(android.media.AudioFormat.Builder().setSampleRate(rate)
+                    .setChannelMask(android.media.AudioFormat.CHANNEL_OUT_MONO)
+                    .setEncoding(android.media.AudioFormat.ENCODING_PCM_16BIT).build())
+                .setTransferMode(android.media.AudioTrack.MODE_STATIC).setBufferSizeInBytes(samples.size * 2).build()
+            tracks.add(track)
+            check(track.setPreferredDevice(devices.speaker()))
+            track.write(samples, 0, samples.size)
+            track.play()
+            handler.postDelayed({ if (tracks.remove(track)) track.release() }, durationMs + 300L)
+        }
+    }
 
     override fun beep() {
-        tone?.startTone(ToneGenerator.TONE_PROP_BEEP, 80)
+        play(660.0, 80)
     }
 
     override fun shutter() {
-        shutterSound.play(MediaActionSound.SHUTTER_CLICK)
+        play(1320.0, 100)
     }
 
     fun release() {
-        tone?.release()
-        shutterSound.release()
+        handler.removeCallbacksAndMessages(null)
+        tracks.forEach { runCatching { it.release() } }
+        tracks.clear()
     }
 }
